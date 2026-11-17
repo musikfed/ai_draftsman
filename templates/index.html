@@ -35,7 +35,7 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:180px;overflow:auto;ba
 @media(max-width:850px){main{grid-template-columns:1fr}#graph{grid-template-columns:repeat(4,minmax(0,1fr))}.node:after{display:none}}
 </style></head><body>
 <header><div><strong>PEGINELAB <span style="color:var(--accent)">AI Draftsman</span></strong><small id="subtitle">Локальная студия Karate Linux · 24 урока × 5 свайпов</small></div>
-<div class="toolbar"><select id="lang" aria-label="Language"></select><span class="stat" id="gpu">GPU —</span><span class="stat" id="statusComfy"><span class="dot"></span>GPU engine</span><span class="stat" id="statusOllama"><span class="dot"></span>Ollama</span>
+<div class="toolbar"><select id="lang" aria-label="Language"></select><span class="stat" id="gpu">GPU —</span><span class="stat" id="statusEngine"><span class="dot"></span>GPU worker</span><span class="stat" id="statusOllama"><span class="dot"></span>Ollama</span>
 <button id="refresh">↻</button></div></header>
 <main>
 <section class="panel full" id="monitorPanel">
@@ -58,13 +58,34 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:180px;overflow:auto;ba
 <label data-i="story">Сценарий и диалоги</label><textarea id="story" placeholder="Описание кадров и точные русские реплики"></textarea>
 <label data-i="prompt">Описание рисунка (без текста в облачках)</label><textarea id="prompt" style="min-height:160px"></textarea>
 <label data-i="approval">Статус</label><select id="approval"><option value="planned">planned</option><option value="draft">draft</option><option value="approved">approved</option></select>
-<div class="toolbar" style="margin-top:12px"><button id="save" class="primary" data-i="save">Сохранить</button><button id="generate" data-i="generate">Генерировать кадр</button></div>
+<div class="toolbar" style="margin-top:12px"><button id="save" class="primary" data-i="save">Сохранить</button></div>
+<h3>Локальный художник SDXL</h3>
+<div class="toolbar">
+ <label style="flex:1;min-width:160px">Режим
+ <select id="renderMode"><option value="txt2img">По описанию</option><option value="img2img">По образцу</option></select></label>
+ <label style="flex:1;min-width:120px">Варианты одного свайпа
+ <select id="variantCount"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+ <label style="flex:1;min-width:150px">Качество
+ <select id="quality"><option value="standard">768 × 960</option><option value="high">896 × 1120</option></select></label>
+</div>
+<div class="toolbar">
+ <label style="flex:1">Образец рисунка
+ <select id="reference"><option value="">Без референса</option></select></label>
+ <label style="flex:1">LoRA (необязательно)
+ <select id="lora"><option value="">Без LoRA</option></select></label>
+</div>
+<div class="toolbar"><input type="file" id="referenceFile" accept="image/png,image/jpeg,image/webp" style="max-width:320px"/>
+ <button id="uploadReference">Добавить образец</button>
+</div>
+<div class="toolbar"><button id="generate" class="primary" data-i="generate">Генерировать кадр</button>
+ <button id="checkJob">Проверить результат</button></div>
+<pre id="jobOutput" style="display:none"></pre><div id="previews" class="toolbar" style="align-items:flex-start"></div>
 <h3 id="engineTitle">Графический генератор</h3>
-<p id="engineHint" class="muted">ComfyUI запускается отдельно из терминала. Веб-панель не запускает и не останавливает другие GPU-службы.</p>
-<div class="toolbar"><button id="powerOff" class="danger">Выключить студию</button><button id="freeVram">Освободить VRAM</button><span class="stat" id="comfyNote">ComfyUI: ожидает запуска из терминала</span></div>
+<p id="engineHint" class="muted">Flask не загружает нейросеть. Отдельный Python-процесс Diffusers запускается только при генерации и завершается после сохранения файлов.</p>
+<div class="toolbar"><button id="powerOff" class="danger">Выключить студию</button><button id="freeVram">Освободить VRAM</button><span class="stat" id="engineNote">Проверка GPU-окружения</span></div>
 <pre id="releaseInfo" style="display:none"></pre>
 <div id="message"></div>
-<div class="muted" data-i="readyNote">Для реальной генерации нужно установить ComfyUI и экспортировать API workflow модели с меткой {{PROMPT}}.</div>
+<div class="muted" data-i="readyNote">Для рисования нужен один установленный SDXL checkpoint и отдельное Python GPU-окружение. Результат: PNG-8 800×1000, до 256 цветов.</div>
 </section>
 <section class="panel full" id="modelsPanel">
   <h2 id="modelsTitle">Библиотека графических моделей</h2>
@@ -77,37 +98,37 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:180px;overflow:auto;ba
     <a href="https://huggingface.co/OnomaAIResearch/Illustrious-XL-v2.0" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">Illustrious XL v2.0 — официальный источник</a>
   </div>
   <div class="muted" id="modelStats"></div><div id="modelResults"></div>
-  <p class="muted" id="modelHelp">Ollama готовит сценарий и анализирует референсы; ComfyUI с SDXL/LoRA создаёт графику. Найденный файл весов ещё не означает совместимость с ComfyUI.</p>
+  <p class="muted" id="modelHelp">Ollama создаёт сценарий; собственный Python-движок Diffusers рисует на RTX 3060. Скачанный checkpoint не означает, что GPU-окружение уже установлено.</p>
 </section>
 </main>
 <script>
 const locales={
-ru:['Сюжетный граф','Нажми урок: пять свайпов связаны в одну историю.','Урок','ИИ: набросать 5 свайпов','План сохраняется как черновик, без генерации.','RAG: база знаний','Найти','Добавить канон в RAG (.txt / .md)','Редактор свайпа','Сценарий и диалоги','Описание рисунка (без текста в облачках)','Статус','Сохранить','Генерировать кадр','GPU-движок — ручное питание','Панель работает постоянно; генератор запускается только вручную.','ВКЛ','ВЫКЛ','Журнал','Для генерации нужен ComfyUI и API workflow с {{PROMPT}}.'],
-en:['Story graph','Select an episode: five connected slides.','Lesson','AI: draft 5 slides','Draft only; no image generation.','RAG knowledge base','Search','Import canon (.txt / .md)','Slide editor','Story and dialogue','Art prompt (empty speech bubbles)','Status','Save','Generate image','GPU engine — manual control','The dashboard stays active; image engine starts only on demand.','ON','OFF','Logs','ComfyUI and API workflow with {{PROMPT}} required.'],
-zh:['故事关系图','选择课程：五张连续画面。','课程','AI：生成五张草稿','只保存草稿，不生成图像。','RAG 知识库','搜索','导入设定 (.txt/.md)','画面编辑器','故事和对话','绘图提示（空白对话框）','状态','保存','生成图像','GPU 引擎—手动控制','控制台常开，图像引擎按需启动。','开启','关闭','日志','需要 ComfyUI 和带 {{PROMPT}} 的工作流。'],
-de:['Handlungsgraph','Lektion auswählen: fünf verbundene Bilder.','Lektion','KI: 5 Entwürfe','Nur Entwurf, keine Bilderzeugung.','RAG-Wissensbasis','Suchen','Kanon importieren (.txt/.md)','Bildeditor','Geschichte und Dialog','Bildprompt (leere Sprechblasen)','Status','Speichern','Bild erzeugen','GPU-Engine — manuell','Die Oberfläche bleibt aktiv; die Engine startet bei Bedarf.','EIN','AUS','Protokoll','ComfyUI und Workflow mit {{PROMPT}} erforderlich.'],
-hi:['कहानी ग्राफ','पाठ चुनें: पाँच जुड़े चित्र।','पाठ','AI: 5 ड्राफ्ट','केवल ड्राफ्ट, चित्र नहीं।','RAG ज्ञान आधार','खोजें','कैनन आयात करें (.txt/.md)','चित्र संपादक','कहानी और संवाद','चित्र निर्देश (खाली संवाद)','स्थिति','सहेजें','चित्र बनाएँ','GPU इंजन — मैनुअल','डैशबोर्ड चालू रहता है; इंजन ज़रूरत पर चालू करें।','चालू','बंद','लॉग','ComfyUI और {{PROMPT}} वर्कफ़्लो चाहिए।'],
-fr:['Graphe narratif','Choisir une leçon : cinq images liées.','Leçon','IA : 5 brouillons','Brouillon uniquement, pas de génération.','Base RAG','Chercher','Importer le canon (.txt/.md)','Éditeur de page','Histoire et dialogues','Description visuelle (bulles vides)','Statut','Enregistrer','Générer une image','Moteur GPU — manuel','Le tableau reste actif, le moteur démarre à la demande.','ON','OFF','Journaux','ComfyUI et workflow avec {{PROMPT}} requis.'],
-fi:['Tarinagraafi','Valitse oppitunti: viisi jatkosivua.','Oppitunti','Tekoäly: 5 luonnosta','Vain luonnos, ei kuvia.','RAG-tietokanta','Hae','Tuo kaanon (.txt/.md)','Sivueditori','Tarina ja dialogi','Kuvakehote (tyhjät puhekuplat)','Tila','Tallenna','Luo kuva','GPU-moottori — käsiohjaus','Paneeli pysyy päällä; moottori käynnistyy tarvittaessa.','PÄÄLLE','POIS','Lokit','Tarvitaan ComfyUI ja {{PROMPT}}-työnkulku.'],
-ko:['스토리 그래프','수업 선택: 이어지는 다섯 장면.','수업','AI: 5장 초안','초안만 저장, 이미지 생성 안 함.','RAG 지식베이스','검색','설정 가져오기 (.txt/.md)','장면 편집기','스토리와 대사','이미지 프롬프트 (빈 말풍선)','상태','저장','이미지 생성','GPU 엔진 — 수동 제어','대시보드는 유지, 엔진만 필요할 때 실행.','켜기','끄기','로그','ComfyUI 및 {{PROMPT}} 워크플로 필요.'],
-ja:['ストーリーグラフ','レッスンを選択：連続する5ページ。','レッスン','AI：5ページの下書き','下書きのみ、画像生成なし。','RAG知識ベース','検索','設定を読み込む (.txt/.md)','ページ編集','ストーリーと台詞','画像プロンプト（吹き出しは空欄）','状態','保存','画像生成','GPUエンジン — 手動','画面は常時使用可能。エンジンは必要時に起動。','オン','オフ','ログ','ComfyUI と {{PROMPT}} ワークフローが必要。'],
-it:['Grafo narrativo','Seleziona lezione: cinque immagini collegate.','Lezione','IA: 5 bozze','Solo bozza, senza generazione.','Base RAG','Cerca','Importa canone (.txt/.md)','Editor diapositiva','Storia e dialoghi','Prompt immagine (fumetti vuoti)','Stato','Salva','Genera immagine','Motore GPU — manuale','Il pannello rimane attivo; avvio motore solo su richiesta.','ON','OFF','Log','Servono ComfyUI e workflow con {{PROMPT}}.'],
-be:['Граф сюжэту','Абяры ўрок: пяць звязаных слайдаў.','Урок','ШІ: 5 чарнавікоў','Толькі чарнавік, без генерацыі.','База ведаў RAG','Шукаць','Імпарт канону (.txt/.md)','Рэдактар слайда','Сюжэт і дыялогі','Апісанне малюнка (пустыя воблачкі)','Статус','Захаваць','Стварыць выяву','GPU-рухавік — ручны','Панэль працуе, генератар запускаецца па патрэбе.','УКЛ','ВЫКЛ','Журнал','Патрэбны ComfyUI і workflow з {{PROMPT}}.']
+ru:['Сюжетный граф','Нажми урок: пять свайпов связаны в одну историю.','Урок','ИИ: набросать 5 свайпов','План сохраняется как черновик, без генерации.','RAG: база знаний','Найти','Добавить канон в RAG (.txt / .md)','Редактор свайпа','Сценарий и диалоги','Описание рисунка (без текста в облачках)','Статус','Сохранить','Генерировать кадр','GPU-движок — ручное питание','Панель работает постоянно; генератор запускается только вручную.','ВКЛ','ВЫКЛ','Журнал','Для генерации нужен Diffusers и API workflow с {{PROMPT}}.'],
+en:['Story graph','Select an episode: five connected slides.','Lesson','AI: draft 5 slides','Draft only; no image generation.','RAG knowledge base','Search','Import canon (.txt / .md)','Slide editor','Story and dialogue','Art prompt (empty speech bubbles)','Status','Save','Generate image','GPU engine — manual control','The dashboard stays active; image engine starts only on demand.','ON','OFF','Logs','Diffusers and API workflow with {{PROMPT}} required.'],
+zh:['故事关系图','选择课程：五张连续画面。','课程','AI：生成五张草稿','只保存草稿，不生成图像。','RAG 知识库','搜索','导入设定 (.txt/.md)','画面编辑器','故事和对话','绘图提示（空白对话框）','状态','保存','生成图像','GPU 引擎—手动控制','控制台常开，图像引擎按需启动。','开启','关闭','日志','需要 Diffusers 和带 {{PROMPT}} 的工作流。'],
+de:['Handlungsgraph','Lektion auswählen: fünf verbundene Bilder.','Lektion','KI: 5 Entwürfe','Nur Entwurf, keine Bilderzeugung.','RAG-Wissensbasis','Suchen','Kanon importieren (.txt/.md)','Bildeditor','Geschichte und Dialog','Bildprompt (leere Sprechblasen)','Status','Speichern','Bild erzeugen','GPU-Engine — manuell','Die Oberfläche bleibt aktiv; die Engine startet bei Bedarf.','EIN','AUS','Protokoll','Diffusers und Workflow mit {{PROMPT}} erforderlich.'],
+hi:['कहानी ग्राफ','पाठ चुनें: पाँच जुड़े चित्र।','पाठ','AI: 5 ड्राफ्ट','केवल ड्राफ्ट, चित्र नहीं।','RAG ज्ञान आधार','खोजें','कैनन आयात करें (.txt/.md)','चित्र संपादक','कहानी और संवाद','चित्र निर्देश (खाली संवाद)','स्थिति','सहेजें','चित्र बनाएँ','GPU इंजन — मैनुअल','डैशबोर्ड चालू रहता है; इंजन ज़रूरत पर चालू करें।','चालू','बंद','लॉग','Diffusers और {{PROMPT}} वर्कफ़्लो चाहिए।'],
+fr:['Graphe narratif','Choisir une leçon : cinq images liées.','Leçon','IA : 5 brouillons','Brouillon uniquement, pas de génération.','Base RAG','Chercher','Importer le canon (.txt/.md)','Éditeur de page','Histoire et dialogues','Description visuelle (bulles vides)','Statut','Enregistrer','Générer une image','Moteur GPU — manuel','Le tableau reste actif, le moteur démarre à la demande.','ON','OFF','Journaux','Diffusers et workflow avec {{PROMPT}} requis.'],
+fi:['Tarinagraafi','Valitse oppitunti: viisi jatkosivua.','Oppitunti','Tekoäly: 5 luonnosta','Vain luonnos, ei kuvia.','RAG-tietokanta','Hae','Tuo kaanon (.txt/.md)','Sivueditori','Tarina ja dialogi','Kuvakehote (tyhjät puhekuplat)','Tila','Tallenna','Luo kuva','GPU-moottori — käsiohjaus','Paneeli pysyy päällä; moottori käynnistyy tarvittaessa.','PÄÄLLE','POIS','Lokit','Tarvitaan Diffusers ja {{PROMPT}}-työnkulku.'],
+ko:['스토리 그래프','수업 선택: 이어지는 다섯 장면.','수업','AI: 5장 초안','초안만 저장, 이미지 생성 안 함.','RAG 지식베이스','검색','설정 가져오기 (.txt/.md)','장면 편집기','스토리와 대사','이미지 프롬프트 (빈 말풍선)','상태','저장','이미지 생성','GPU 엔진 — 수동 제어','대시보드는 유지, 엔진만 필요할 때 실행.','켜기','끄기','로그','Diffusers 및 {{PROMPT}} 워크플로 필요.'],
+ja:['ストーリーグラフ','レッスンを選択：連続する5ページ。','レッスン','AI：5ページの下書き','下書きのみ、画像生成なし。','RAG知識ベース','検索','設定を読み込む (.txt/.md)','ページ編集','ストーリーと台詞','画像プロンプト（吹き出しは空欄）','状態','保存','画像生成','GPUエンジン — 手動','画面は常時使用可能。エンジンは必要時に起動。','オン','オフ','ログ','Diffusers と {{PROMPT}} ワークフローが必要。'],
+it:['Grafo narrativo','Seleziona lezione: cinque immagini collegate.','Lezione','IA: 5 bozze','Solo bozza, senza generazione.','Base RAG','Cerca','Importa canone (.txt/.md)','Editor diapositiva','Storia e dialoghi','Prompt immagine (fumetti vuoti)','Stato','Salva','Genera immagine','Motore GPU — manuale','Il pannello rimane attivo; avvio motore solo su richiesta.','ON','OFF','Log','Servono Diffusers e workflow con {{PROMPT}}.'],
+be:['Граф сюжэту','Абяры ўрок: пяць звязаных слайдаў.','Урок','ШІ: 5 чарнавікоў','Толькі чарнавік, без генерацыі.','База ведаў RAG','Шукаць','Імпарт канону (.txt/.md)','Рэдактар слайда','Сюжэт і дыялогі','Апісанне малюнка (пустыя воблачкі)','Статус','Захаваць','Стварыць выяву','GPU-рухавік — ручны','Панэль працуе, генератар запускаецца па патрэбе.','УКЛ','ВЫКЛ','Журнал','Патрэбны Diffusers і workflow з {{PROMPT}}.']
 };
 const ids=['graph','graphHint','lesson','draftFive','draftHint','rag','find','canonUpload','editor','story','prompt','approval','save','generate','engine','engineHint','powerOn','powerOff','logs','readyNote'];
 
 const monitorTexts={
- ru:{title:'Мониторинг Huananzhi',update:'↻ Обновить показатели',disk:'Диски',zombies:'Зомби-процессы',note:'Данные считываются только по кнопке. Фонового опроса нет.',engine:'Графический генератор',hint:'ComfyUI запускается отдельно из терминала; студия его не включает.',off:'Выключить студию',models:'Библиотека моделей',scan:'Найти модели на дисках',ollama:'Показать модели Ollama',help:'Ollama пишет сценарии и анализирует образцы; картинки создаёт ComfyUI с отдельной графической моделью.'},
- en:{title:'Huananzhi monitoring',update:'↻ Refresh metrics',disk:'Disks',zombies:'Zombie processes',note:'On-demand refresh only. No background polling.',engine:'Image generation backend',hint:'Start ComfyUI separately in a terminal.',off:'Shut down studio',models:'Model library',scan:'Find models on disks',ollama:'List Ollama models',help:'Ollama plans scenes and analyzes images; ComfyUI needs its own image model.'},
- zh:{title:'Huananzhi 监控',update:'↻ 刷新指标',disk:'磁盘',zombies:'僵尸进程',note:'仅按需刷新，无后台轮询。',engine:'图像生成引擎',hint:'请在终端单独启动 ComfyUI。',off:'关闭工作室',models:'模型库',scan:'扫描磁盘模型',ollama:'显示 Ollama 模型',help:'Ollama 编写剧情；ComfyUI 使用单独的图像模型。'},
- de:{title:'Huananzhi-Monitor',update:'↻ Werte aktualisieren',disk:'Datenträger',zombies:'Zombie-Prozesse',note:'Nur manuelle Aktualisierung, kein Polling.',engine:'Bildgenerator',hint:'ComfyUI separat im Terminal starten.',off:'Studio beenden',models:'Modellbibliothek',scan:'Modelle auf Laufwerken suchen',ollama:'Ollama-Modelle',help:'Ollama plant; ComfyUI benötigt ein eigenes Bildmodell.'},
- hi:{title:'Huananzhi निगरानी',update:'↻ आँकड़े ताज़ा करें',disk:'डिस्क',zombies:'ज़ॉम्बी प्रक्रियाएँ',note:'केवल बटन से ताज़ा, पृष्ठभूमि पोलिंग नहीं।',engine:'चित्र जनरेटर',hint:'ComfyUI टर्मिनल से अलग शुरू करें।',off:'स्टूडियो बंद करें',models:'मॉडल लाइब्रेरी',scan:'डिस्क पर मॉडल खोजें',ollama:'Ollama मॉडल दिखाएँ',help:'Ollama कहानी लिखता है; ComfyUI अलग चित्र मॉडल चलाता है।'},
- fr:{title:'Surveillance Huananzhi',update:'↻ Actualiser',disk:'Disques',zombies:'Processus zombies',note:'Actualisation manuelle, sans requêtes en arrière-plan.',engine:'Générateur d’images',hint:'Démarrez ComfyUI séparément dans le terminal.',off:'Arrêter le studio',models:'Bibliothèque de modèles',scan:'Rechercher les modèles',ollama:'Modèles Ollama',help:'Ollama rédige; ComfyUI utilise un modèle graphique distinct.'},
- fi:{title:'Huananzhi-valvonta',update:'↻ Päivitä tiedot',disk:'Levyt',zombies:'Zombiprosessit',note:'Vain manuaalinen päivitys; ei taustakyselyjä.',engine:'Kuvageneraattori',hint:'Käynnistä ComfyUI erikseen terminaalista.',off:'Sulje studio',models:'Mallikirjasto',scan:'Etsi malleja levyiltä',ollama:'Näytä Ollama-mallit',help:'Ollama suunnittelee; ComfyUI tarvitsee oman kuvamallin.'},
- ko:{title:'Huananzhi 모니터',update:'↻ 상태 새로고침',disk:'디스크',zombies:'좀비 프로세스',note:'수동 새로고침만 지원합니다.',engine:'이미지 생성기',hint:'ComfyUI는 터미널에서 별도 실행합니다.',off:'스튜디오 종료',models:'모델 라이브러리',scan:'디스크 모델 찾기',ollama:'Ollama 모델 보기',help:'Ollama는 스토리, ComfyUI는 이미지 생성을 담당합니다.'},
- ja:{title:'Huananzhi 監視',update:'↻ 状態更新',disk:'ディスク',zombies:'ゾンビプロセス',note:'手動更新のみ。バックグラウンド通信なし。',engine:'画像生成エンジン',hint:'ComfyUI は端末から別途起動します。',off:'スタジオ終了',models:'モデルライブラリ',scan:'ディスクからモデルを検索',ollama:'Ollama モデル一覧',help:'Ollama は脚本、ComfyUI は画像生成を担当。'},
- it:{title:'Monitoraggio Huananzhi',update:'↻ Aggiorna',disk:'Dischi',zombies:'Processi zombie',note:'Solo aggiornamento manuale.',engine:'Generatore immagini',hint:'Avvia ComfyUI separatamente dal terminale.',off:'Chiudi studio',models:'Libreria modelli',scan:'Cerca modelli sui dischi',ollama:'Modelli Ollama',help:'Ollama scrive; ComfyUI genera immagini con un modello separato.'},
- be:{title:'Маніторынг Huananzhi',update:'↻ Абнавіць',disk:'Дыскі',zombies:'Зомбі-працэсы',note:'Толькі ручное абнаўленне.',engine:'Генератар малюнкаў',hint:'Запускай ComfyUI асобна з тэрмінала.',off:'Выключыць студыю',models:'Бібліятэка мадэляў',scan:'Знайсці мадэлі на дысках',ollama:'Паказаць мадэлі Ollama',help:'Ollama рыхтуе сюжэт; ComfyUI малюе асобнай мадэллю.'}
+ ru:{title:'Мониторинг Huananzhi',update:'↻ Обновить показатели',disk:'Диски',zombies:'Зомби-процессы',note:'Данные считываются только по кнопке. Фонового опроса нет.',engine:'Графический генератор',hint:'Diffusers запускается отдельно из терминала; студия его не включает.',off:'Выключить студию',models:'Библиотека моделей',scan:'Найти модели на дисках',ollama:'Показать модели Ollama',help:'Ollama пишет сценарии и анализирует образцы; картинки создаёт Diffusers с отдельной графической моделью.'},
+ en:{title:'Huananzhi monitoring',update:'↻ Refresh metrics',disk:'Disks',zombies:'Zombie processes',note:'On-demand refresh only. No background polling.',engine:'Image generation backend',hint:'Start Diffusers separately in a terminal.',off:'Shut down studio',models:'Model library',scan:'Find models on disks',ollama:'List Ollama models',help:'Ollama plans scenes and analyzes images; Diffusers needs its own image model.'},
+ zh:{title:'Huananzhi 监控',update:'↻ 刷新指标',disk:'磁盘',zombies:'僵尸进程',note:'仅按需刷新，无后台轮询。',engine:'图像生成引擎',hint:'请在终端单独启动 Diffusers。',off:'关闭工作室',models:'模型库',scan:'扫描磁盘模型',ollama:'显示 Ollama 模型',help:'Ollama 编写剧情；Diffusers 使用单独的图像模型。'},
+ de:{title:'Huananzhi-Monitor',update:'↻ Werte aktualisieren',disk:'Datenträger',zombies:'Zombie-Prozesse',note:'Nur manuelle Aktualisierung, kein Polling.',engine:'Bildgenerator',hint:'Diffusers separat im Terminal starten.',off:'Studio beenden',models:'Modellbibliothek',scan:'Modelle auf Laufwerken suchen',ollama:'Ollama-Modelle',help:'Ollama plant; Diffusers benötigt ein eigenes Bildmodell.'},
+ hi:{title:'Huananzhi निगरानी',update:'↻ आँकड़े ताज़ा करें',disk:'डिस्क',zombies:'ज़ॉम्बी प्रक्रियाएँ',note:'केवल बटन से ताज़ा, पृष्ठभूमि पोलिंग नहीं।',engine:'चित्र जनरेटर',hint:'Diffusers टर्मिनल से अलग शुरू करें।',off:'स्टूडियो बंद करें',models:'मॉडल लाइब्रेरी',scan:'डिस्क पर मॉडल खोजें',ollama:'Ollama मॉडल दिखाएँ',help:'Ollama कहानी लिखता है; Diffusers अलग चित्र मॉडल चलाता है।'},
+ fr:{title:'Surveillance Huananzhi',update:'↻ Actualiser',disk:'Disques',zombies:'Processus zombies',note:'Actualisation manuelle, sans requêtes en arrière-plan.',engine:'Générateur d’images',hint:'Démarrez Diffusers séparément dans le terminal.',off:'Arrêter le studio',models:'Bibliothèque de modèles',scan:'Rechercher les modèles',ollama:'Modèles Ollama',help:'Ollama rédige; Diffusers utilise un modèle graphique distinct.'},
+ fi:{title:'Huananzhi-valvonta',update:'↻ Päivitä tiedot',disk:'Levyt',zombies:'Zombiprosessit',note:'Vain manuaalinen päivitys; ei taustakyselyjä.',engine:'Kuvageneraattori',hint:'Käynnistä Diffusers erikseen terminaalista.',off:'Sulje studio',models:'Mallikirjasto',scan:'Etsi malleja levyiltä',ollama:'Näytä Ollama-mallit',help:'Ollama suunnittelee; Diffusers tarvitsee oman kuvamallin.'},
+ ko:{title:'Huananzhi 모니터',update:'↻ 상태 새로고침',disk:'디스크',zombies:'좀비 프로세스',note:'수동 새로고침만 지원합니다.',engine:'이미지 생성기',hint:'Diffusers는 터미널에서 별도 실행합니다.',off:'스튜디오 종료',models:'모델 라이브러리',scan:'디스크 모델 찾기',ollama:'Ollama 모델 보기',help:'Ollama는 스토리, Diffusers는 이미지 생성을 담당합니다.'},
+ ja:{title:'Huananzhi 監視',update:'↻ 状態更新',disk:'ディスク',zombies:'ゾンビプロセス',note:'手動更新のみ。バックグラウンド通信なし。',engine:'画像生成エンジン',hint:'Diffusers は端末から別途起動します。',off:'スタジオ終了',models:'モデルライブラリ',scan:'ディスクからモデルを検索',ollama:'Ollama モデル一覧',help:'Ollama は脚本、Diffusers は画像生成を担当。'},
+ it:{title:'Monitoraggio Huananzhi',update:'↻ Aggiorna',disk:'Dischi',zombies:'Processi zombie',note:'Solo aggiornamento manuale.',engine:'Generatore immagini',hint:'Avvia Diffusers separatamente dal terminale.',off:'Chiudi studio',models:'Libreria modelli',scan:'Cerca modelli sui dischi',ollama:'Modelli Ollama',help:'Ollama scrive; Diffusers genera immagini con un modello separato.'},
+ be:{title:'Маніторынг Huananzhi',update:'↻ Абнавіць',disk:'Дыскі',zombies:'Зомбі-працэсы',note:'Толькі ручное абнаўленне.',engine:'Генератар малюнкаў',hint:'Запускай Diffusers асобна з тэрмінала.',off:'Выключыць студыю',models:'Бібліятэка мадэляў',scan:'Знайсці мадэлі на дысках',ollama:'Паказаць мадэлі Ollama',help:'Ollama рыхтуе сюжэт; Diffusers малюе асобнай мадэллю.'}
 };
 const actionTexts={
 ru:['Освободить VRAM','Скачать Illustrious XL v2.0','Состояние загрузки'],
@@ -153,10 +174,10 @@ function metric(title,amount,percent,detail){
 }
 async function check(){
  let s=await api('/api/status'),g=s.gpu?.devices?.[0],cpu=s.cpu,ram=s.ram,swap=s.swap;
- $('statusComfy').classList.toggle('on',s.comfy_online);
+ $('statusEngine').classList.toggle('on',s.engine_ready);
  $('statusOllama').classList.toggle('on',s.ollama_online);
  $('gpu').textContent=g?'GPU '+g.name+' · '+g.temperature_c+'°C':'GPU —';
- $('comfyNote').textContent='ComfyUI: '+(s.comfy_online?'ONLINE :8188':'OFFLINE · запуск из терминала');
+ $('engineNote').textContent='GPU: '+(s.engine_busy?'ИДЁТ ГЕНЕРАЦИЯ':s.engine_ready?'ГОТОВ':'НЕ УСТАНОВЛЕН');
  const items=[
   metric('CPU',cpu.percent+'%',cpu.percent,cpu.logical_threads+' threads · load '+cpu.load_average.join('/')),
   metric('RAM',ram.percent+'%',ram.percent,fmtMib(ram.used_mib)+' / '+fmtMib(ram.total_mib)),
@@ -167,20 +188,20 @@ async function check(){
  $('monitorMetrics').replaceChildren(...items);
  $('monitorDisks').replaceChildren(...s.disks.map(d=>metric(d.mount,d.percent+'%',d.percent,fmtMib(d.free_mib)+' free · '+d.device)));
  $('zombieDetails').textContent=s.zombies.examples.length?s.zombies.examples.map(z=>'PID '+z.pid+' PPID '+z.ppid+' '+z.name).join('\n'):'Нет зомби';
- message('Мониторинг обновлён · ComfyUI '+(s.comfy_online?'ONLINE':'OFFLINE')+' · Ollama '+(s.ollama_online?'ONLINE':'OFFLINE'));
+ message('Мониторинг обновлён · GPU '+(s.engine_busy?'BUSY':s.engine_ready?'READY':'NOT READY')+' · Ollama '+(s.ollama_online?'ONLINE':'OFFLINE'));
 }
 async function run(fn){try{await fn()}catch(e){message('Ошибка: '+e.message)}}
 $('refresh').onclick=()=>run(check);
 $('save').onclick=()=>run(async()=>{await api('/api/slides/'+lesson+'/'+slide,'POST',{story:$('story').value,prompt:$('prompt').value,status:$('approval').value});await load();message('Слайд сохранён')});
 $('powerOff').onclick=()=>run(async()=>{
- if(!confirm('Выключить только эту веб-студию на порту 9898? Ollama и ComfyUI останутся работать.'))return;
+ if(!confirm('Выключить только веб-студию на порту 9898? Ollama и уже запущенные задания продолжат работу.'))return;
  await api('/api/shutdown','POST',{});
  message('Студия на 9898 завершается. Повторный запуск: bash scripts/run.sh');
  $('powerOff').disabled=true;
 });
 $('freeVram').onclick=()=>run(async()=>{
  $('freeVram').disabled=true;
- message('Отправляю запросы на выгрузку моделей ComfyUI и Ollama...');
+ message('Проверяю GPU и запрашиваю выгрузку загруженных моделей Ollama...');
  try{
   let result=await api('/api/gpu/free','POST',{});
   $('releaseInfo').style.display='block';
@@ -190,7 +211,52 @@ $('freeVram').onclick=()=>run(async()=>{
 });
 $('refreshMetrics').onclick=()=>run(check);
 $('planAI').onclick=()=>run(async()=>{message('Ollama готовит пять последовательных свайпов...');let s=await api('/api/ollama/plan','POST',{lesson});await load();message('Сохранены '+s.saved+' черновиков. Проверь и утверди каждый.')});
-$('generate').onclick=()=>run(async()=>{let s=await api('/api/engine/generate','POST',{lesson,slide});message('ComfyUI принял задание: '+s.prompt_id)});
+let currentJobId='';
+$('generate').onclick=()=>run(async()=>{
+ $('generate').disabled=true;
+ try{
+   let mode=$('renderMode').value;
+   let body={lesson,slide,mode,variants:Number($('variantCount').value),quality:$('quality').value,
+             reference:$('reference').value,lora:$('lora').value};
+   let r=await api('/api/engine/generate','POST',body);
+   currentJobId=r.job_id; sessionStorage.setItem('draftsman_job',currentJobId);
+   $('jobOutput').style.display='block';
+   $('jobOutput').textContent='Создано задание '+currentJobId+' — нажми «Проверить результат».';
+   message('Собственный GPU-движок начал работу. Мониторинг по кнопке, без фонового опроса.');
+ }finally{$('generate').disabled=false}
+});
+$('checkJob').onclick=()=>run(async()=>{
+ let id=currentJobId||sessionStorage.getItem('draftsman_job');
+ if(!id)throw Error('Сначала запусти генерацию');
+ let r=await api('/api/jobs/'+encodeURIComponent(id));
+ $('jobOutput').style.display='block';
+ $('jobOutput').textContent=JSON.stringify({job_id:id,status:r.status,completed:r.completed,
+  total:r.total,error:r.error||null,outputs:r.outputs?.length||0},null,2);
+ $('previews').replaceChildren();
+ for(let o of r.outputs||[]){
+   let a=document.createElement('a');a.href=o.preview_url;a.target='_blank';a.rel='noopener noreferrer';
+   let im=document.createElement('img');im.src=o.preview_url;im.loading='lazy';
+   im.width=160;im.height=200;im.alt='Вариант '+o.variant;
+   a.append(im);$('previews').append(a);
+ }
+ message('Состояние: '+r.status+' · '+(r.completed||0)+' / '+r.total);
+});
+async function refreshReferences(){
+ let r=await api('/api/references');let list=$('reference');let existing=list.value;
+ list.replaceChildren(new Option('Без референса',''),...r.references.map(x=>new Option(x,x)));
+ if(r.references.includes(existing))list.value=existing;
+ let l=await api('/api/loras'),sel=$('lora');let chosen=sel.value;
+ sel.replaceChildren(new Option('Без LoRA',''),...l.loras.map(x=>new Option(x,x)));
+ if(l.loras.includes(chosen))sel.value=chosen;
+}
+$('uploadReference').onclick=()=>run(async()=>{
+ let f=$('referenceFile').files[0];if(!f)throw Error('Выбери файл PNG/JPEG/WEBP');
+ let form=new FormData();form.append('file',f);
+ let r=await api('/api/references/upload','POST',form);
+ await refreshReferences();$('reference').value=r.filename;
+ $('renderMode').value='img2img';message('Референс сохранён. Выбран режим «По образцу».');
+});
+
 $('scanModels').onclick=()=>run(async()=>{
  $('modelStats').textContent='Сканирование файлов на сервере...';
  let r=await api('/api/models/scan','POST',{});$('modelResults').replaceChildren();
@@ -216,5 +282,5 @@ $('showOllamaModels').onclick=()=>run(async()=>{
 });
 $('searchBtn').onclick=()=>run(async()=>{let r=await api('/api/rag/search?q='+encodeURIComponent($('search').value));$('ragResult').textContent=r.results.map(x=>x.source+': '+x.chunk).join('\n\n')||'Нет результатов'});
 $('ragFile').onchange=()=>run(async()=>{let f=$('ragFile').files[0];if(!f)return;let form=new FormData();form.append('file',f);let r=await api('/api/rag/import','POST',form);message('RAG: загружено '+r.imported+' фрагментов')});
-load().then(check).catch(e=>message(e.message));
+load().then(()=>Promise.all([check(),refreshReferences()])).catch(e=>message(e.message));
 </script></body></html>

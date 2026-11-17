@@ -62,7 +62,7 @@ def generate(spec: dict, state_path: Path) -> None:
     init_image = None
     if mode == "img2img":
         image = Path(spec["reference"]).resolve()
-        references = (BASE / "data/references").resolve()
+        references = (Path(os.getenv("DRAFTSMAN_DATA", str(BASE/"data"))).resolve() / "references")
         if image.parent != references or not image.is_file():
             raise ValueError("Only uploaded images from data/references are accepted")
         init_image = ImageOps.fit(Image.open(image).convert("RGB"),
@@ -119,14 +119,14 @@ def main():
     ap.add_argument("spec", type=Path)
     args = ap.parse_args()
     spec_path = args.spec.resolve()
-    data_root = (BASE / "data/jobs").resolve()
+    data_root = (Path(os.getenv("DRAFTSMAN_DATA", str(BASE/"data"))).resolve() / "jobs")
     if spec_path.parent.parent != data_root or spec_path.name != "spec.json":
         raise SystemExit("Job spec must be in project data/jobs/<id>/spec.json")
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
     state_path = spec_path.parent / "state.json"
-    os.environ.setdefault("HF_HOME", str(BASE / "data/huggingface"))
-    os.environ.setdefault("HF_HUB_CACHE", str(BASE / "data/huggingface/hub"))
-    os.environ.setdefault("TORCH_HOME", str(BASE / "data/torch"))
+    os.environ.setdefault("HF_HOME", str(data_root.parent / "huggingface"))
+    os.environ.setdefault("HF_HUB_CACHE", str(data_root.parent / "huggingface/hub"))
+    os.environ.setdefault("TORCH_HOME", str(data_root.parent / "torch"))
     try:
         generate(spec, state_path)
     except Exception as exc:

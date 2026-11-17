@@ -125,7 +125,8 @@ def model_download_illustrious():
             local_path = hf_hub_download(
                 repo_id="OnomaAIResearch/Illustrious-XL-v2.0",
                 filename="Illustrious-XL-v2.0.safetensors",
-                local_dir=directory
+                local_dir=directory,
+                cache_dir=str(DATA / "huggingface" / "hub")
             )
             with _download_lock:
                 _download_state.update(status="completed", path=str(local_path),

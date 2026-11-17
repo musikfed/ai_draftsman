@@ -6,7 +6,7 @@
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
 header{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:11px 20px;border-bottom:1px solid var(--line)}
 .brand{font-size:18px;font-weight:750}.brand b{color:var(--orange)}.sub{font-size:11px;color:var(--muted)}
-main{max-width:1610px;margin:auto;padding:14px}.cols{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(330px,1fr);gap:12px;align-items:start}
+main{width:100%;max-width:none;margin:0;padding:12px clamp(8px,1.2vw,24px)}.cols{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(380px,1fr);gap:12px;align-items:start}
 .panel{background:var(--pane);border:1px solid var(--line);border-radius:11px;padding:13px;margin-bottom:12px;min-width:0}
 h2{margin:0 0 10px;font-size:17px}h3{font-size:14px;margin:12px 0 7px}
 button,input,select,textarea{font:inherit;color:var(--text)}button{background:#2a3d58;border:1px solid #435d7b;padding:7px 11px;border-radius:7px;cursor:pointer}button:hover{border-color:var(--orange)}
@@ -19,8 +19,8 @@ textarea{min-height:64px;resize:vertical}label{display:block;font-size:12px;colo
 .dot{width:8px;height:8px;background:#768393;border-radius:50%;align-self:center}.on .dot{background:var(--green)}
 details{border-top:1px solid #2a3e57;padding-top:7px;margin-top:9px}summary{cursor:pointer;color:var(--muted);font-size:12px}
 .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-#canvasViewport{height:485px;max-height:58vh;overflow:auto;background:#0e1929;border:1px solid var(--line);border-radius:9px}
-#canvas{position:relative;width:1540px;height:650px;background-image:linear-gradient(#ffffff07 1px,transparent 1px),linear-gradient(90deg,#ffffff07 1px,transparent 1px);background-size:24px 24px}
+#canvasViewport{height:clamp(300px,47vh,630px);overflow:auto;background:#0e1929;border:1px solid var(--line);border-radius:9px}
+#canvas{position:relative;width:100%;height:100%;background-image:linear-gradient(#ffffff07 1px,transparent 1px),linear-gradient(90deg,#ffffff07 1px,transparent 1px);background-size:24px 24px}
 #edges{position:absolute;inset:0;pointer-events:none}
 .graph-node{position:absolute;width:184px;height:82px;text-align:left;touch-action:none;user-select:none;border:1px solid #556984;background:#253853;border-radius:8px;padding:8px;overflow:hidden}
 .graph-node .kind{display:block;font-size:10px;color:#b4c8da;letter-spacing:.07em;text-transform:uppercase}
@@ -37,6 +37,17 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
 #disks{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}#disks .metric{flex:1 1 150px;padding:6px 9px}
 #previews{display:flex;flex-wrap:wrap;gap:7px}#previews img{width:140px;height:175px;object-fit:contain;border:1px solid var(--line);border-radius:6px}
 #notices{font-size:12px;color:var(--muted)}.collapsed{display:none}
+.mode-tabs{margin:0 0 12px}.mode-tabs button.chosen{background:#ba5f18;border-color:#f2a248}
+.cols.quick #projectColumn>.panel:not(#quickSection){display:none}
+.cols.quick #nodeInspector,.cols.quick #projectKnowledge{display:none}
+#quickSection textarea{min-height:115px}
+.wait-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:10px 0}
+.wait-slot{height:165px;border:1px dashed #4a5e78;background:linear-gradient(100deg,#24344b 8%,#33445b 18%,#24344b 33%);background-size:200% 100%;border-radius:8px;animation:waiting 2s linear infinite;display:flex;align-items:center;justify-content:center;color:#b6cce2;font-size:12px}
+@keyframes waiting{to{background-position-x:-200%}}
+#jobProgress{margin:8px 0}#jobProgress progress{width:100%;height:12px;accent-color:var(--orange)}
+#jobHistory{max-width:100%;min-width:0}
+@media(prefers-reduced-motion:reduce){.wait-slot{animation:none}}
+
 @media(max-width:970px){.cols{grid-template-columns:1fr}#canvasViewport{height:440px}}
 @media(max-width:600px){header{padding:9px}main{padding:8px}.panel{padding:10px}.grid3,.grid2{grid-template-columns:1fr 1fr}#systemMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style></head><body>
@@ -55,8 +66,22 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
  <div style="margin-top:10px" class="toolbar"><button id="updateMetrics" data-t="update">↻ Обновить показатели</button><span class="muted" data-t="statsInfo">CPU · RAM · VRAM · SWAP · Zombie · реальные диски</span></div>
  <div id="systemMetrics"></div><div id="disks"></div><div class="muted" id="zombies"></div>
 </details>
-<div class="cols">
- <section>
+<div class="toolbar mode-tabs"><button id="quickTab" class="chosen">⚡ Быстрый рисунок — без графа</button><button id="graphTab">◈ Проекты и граф</button><span class="muted">Нейросеть рисует на сервере, Ollama помогает составить промпт</span></div>
+<div class="cols" id="workArea">
+ <section id="projectColumn">
+  <div id="quickSection" class="panel collapsed">
+   <h2>Быстрая генерация без проекта</h2>
+   <p class="muted">Описывай любую картинку. Граф, узлы и утверждение не нужны. По образцу — выбери img2img справа.</p>
+   <label for="quickPrompt">Что нарисовать — положительный промпт</label>
+   <textarea id="quickPrompt" placeholder="Например: пушистый рыжий котёнок на зимнем подоконнике, мягкий свет, выразительная иллюстрация"></textarea>
+   <label for="quickNegative">Чего не должно быть — негативный промпт</label>
+   <textarea id="quickNegative" rows="3" placeholder="Размытость, лишние лапы, водяные знаки..."></textarea>
+   <div class="toolbar"><select id="quickLLM" aria-label="Языковая модель для промпта"><option value="qwen3:8b">qwen3:8b</option></select>
+    <button id="quickDraftAI">ИИ: улучшить промпт</button>
+    <button id="saveQuick" class="primary">Сохранить черновик</button>
+   </div>
+   <p class="muted">Черновик хранится в SQLite. Готовые изображения и параметры задания хранятся на сервере.</p>
+  </div>
   <div class="panel">
    <h2 data-t="projects">Проекты</h2>
    <div class="toolbar"><select id="projectSelect" class="grow"></select>
@@ -101,8 +126,8 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
    </details>
   </div>
  </section>
- <section>
-  <div class="panel">
+ <section id="sideColumn">
+  <div id="nodeInspector" class="panel">
    <h2 data-t="inspector">Параметры выбранного узла</h2><div class="muted" id="selectedNode">Выбери узел на графе или создай новый</div>
    <label data-t="nodeName">Название узла</label><input id="nodeTitle">
    <label data-t="nodeType">Тип</label><select id="nodeKind"><option value="scene">Сцена</option><option value="character">Персонаж</option><option value="style">Стиль</option><option value="prompt">Промпт</option><option value="reference">Референс</option><option value="note">Заметка</option><option value="output">Результат</option><option value="lesson">Глава</option><option value="slide">Слайд</option></select>
@@ -134,9 +159,13 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
    <div class="toolbar"><input id="referenceFile" type="file" accept=".jpg,.jpeg,.png,.webp" class="grow"><button id="uploadReference" data-t="upload">Добавить образец</button></div>
    <label>SDXL LoRA</label><select id="lora"><option value="">Без LoRA</option></select>
    <div class="toolbar" style="margin-top:10px"><button id="generate" class="primary" data-t="generate">Генерировать</button><button id="checkJob" data-t="checkJob">Проверить результат</button></div>
+   <div id="jobProgress" class="collapsed"><div class="muted" id="jobStage">Загрузка модели</div><progress id="jobBar" max="100" value="0"></progress><div id="waitGrid" class="wait-grid"></div></div>
    <pre id="jobInfo" class="collapsed"></pre><div id="previews"></div>
+   <details><summary>История генераций — сохраняется после F5</summary>
+    <div class="toolbar"><select id="jobHistory" class="grow"></select><button id="restoreJob">Открыть результат</button><button id="refreshJobs">Обновить историю</button></div>
+   </details>
   </div>
-  <div class="panel">
+  <div id="projectKnowledge" class="panel">
    <h3 data-t="projectKnowledge">Знания проекта (текстовый RAG)</h3>
    <div class="muted" data-t="knowledgeHelp">TXT/MD индексируются только для выбранного проекта; агент использует их вместе со связанными узлами.</div>
    <div class="toolbar"><input id="kbFile" type="file" accept=".txt,.md" class="grow"><button id="kbUpload" data-t="upload">Добавить</button></div>
@@ -162,6 +191,7 @@ const TR={
  be:{projects:'Праекты',newProject:'Новы праект',graph:'Рэдактар графа',inspector:'Рэдактар вузла',addNode:'Дадаць вузел',saveNode:'Захаваць вузел',generate:'Стварыць выяву',llmManager:'Мадэлі Ollama',downloadLLM:'Спампаваць LLM',projectSettings:'Налады праекта'}
 };
 let lang='ru', projects=[], project=null, nodes=[], edges=[], chosen=0, currentJob='';
+let currentMode='graph', jobTimer=null;
 let busy=false;
 function say(s){$('message').textContent=String(s)}
 async function api(url,method='GET',data){
@@ -208,8 +238,8 @@ async function loadProject(id,keepSelection=false){
 }
 function renderGraph(){
  const wrap=$('canvas'),svg=$('edges');
- const maxx=Math.max(1000,...nodes.map(n=>n.x+215))+45;
- const maxy=Math.max(590,...nodes.map(n=>n.y+110))+35;
+ const maxx=Math.max($('canvasViewport').clientWidth-5,...nodes.map(n=>n.x+215),360)+12;
+ const maxy=Math.max($('canvasViewport').clientHeight-5,...nodes.map(n=>n.y+110),295)+12;
  wrap.style.width=maxx+'px';wrap.style.height=maxy+'px';
  svg.setAttribute('width',maxx);svg.setAttribute('height',maxy);
  svg.replaceChildren();
@@ -311,6 +341,10 @@ async function refreshLLM(preferred){
  if(model&&!list.includes(model))list.unshift(model);
  $('llmSelect').replaceChildren(...list.map(n=>opt(n,n)));
  if(model)$('llmSelect').value=model;
+ const q = $('quickLLM').value || 'qwen3:8b';
+ const choices = [...new Set([...list, q])];
+ $('quickLLM').replaceChildren(...choices.map(n=>opt(n,n)));
+ $('quickLLM').value=q;
  $('llmInfo').textContent=list.length?'Установлено '+list.length+' моделей: '+list.join(', ')+'. Новые загрузки Ollama могут попасть на системный диск.':'Ollama не отвечает; проверь службу.';
 }
 async function refreshResources(){
@@ -456,34 +490,119 @@ $('uploadReference').onclick=()=>task(async()=>{
  await refreshResources();$('reference').value=r.filename;$('renderMode').value='img2img';
  say('Образец загружен');
 });
-$('generate').onclick=()=>task(async()=>{
- if(!project||!chosen)throw Error('Выбери узел');
- await saveNode();
- const [width,height]=$('resolution').value.split('x').map(Number);
- const result=await api('/api/studio/projects/'+project.id+'/nodes/'+chosen+'/generate','POST',{
-  mode:$('renderMode').value,variants:Number($('variants').value),
-  width,height,seed:Number($('seed').value),
-  steps:Number($('steps').value),cfg:Number($('cfg').value),
-  strength:Number($('strength').value),
-  reference:$('reference').value,lora:$('lora').value
- });
- currentJob=result.job_id;
+
+function switchMode(next){
+ currentMode=next==='quick'?'quick':'graph';
+ $('workArea').classList.toggle('quick',currentMode==='quick');
+ $('quickSection').classList.toggle('collapsed',currentMode!=='quick');
+ $('quickTab').classList.toggle('chosen',currentMode==='quick');
+ $('graphTab').classList.toggle('chosen',currentMode==='graph');
+ if(currentMode==='graph')renderGraph();
+ try{localStorage.setItem('draftsman_mode',currentMode)}catch(e){}
+}
+$('quickTab').onclick=()=>switchMode('quick');
+$('graphTab').onclick=()=>switchMode('graph');
+$('saveQuick').onclick=()=>task(async()=>{
+ await api('/api/quick/draft/saved','PUT',{prompt:$('quickPrompt').value,negative_prompt:$('quickNegative').value});
+ say('Черновик сохранён в SQLite');
+});
+$('quickDraftAI').onclick=()=>task(async()=>{
+ const idea=$('quickPrompt').value.trim();if(!idea)throw Error('Сначала опиши изображение');
+ say('Ollama составляет промпт...');
+ const result=await api('/api/quick/draft','POST',{idea,model:$('quickLLM').value});
+ $('quickPrompt').value=result.prompt;$('quickNegative').value=result.negative_prompt||'';
+ await api('/api/quick/draft/saved','PUT',{prompt:result.prompt,negative_prompt:result.negative_prompt||''});
+ say('Промпт подготовлен и сохранён — проверь перед генерацией');
+});
+function renderWaiting(total){
+ $('waitGrid').replaceChildren(...Array.from({length:Math.max(1,Math.min(3,total||1))},(_,i)=>{
+   const card=document.createElement('div');card.className='wait-slot';
+   card.textContent='Вариант '+(i+1)+' · ожидание';return card;
+ }));
+}
+function stopJobPolling(){if(jobTimer){clearTimeout(jobTimer);jobTimer=null}}
+function scheduleJobRefresh(){
+ stopJobPolling();
+ jobTimer=setTimeout(async()=>{
+   if(document.hidden){scheduleJobRefresh();return}
+   try{await updateJob()}catch(e){say('Проверка задания: '+e.message)}
+ },4000);
+}
+async function updateJob(){
+ if(!currentJob)throw Error('Нет выбранного задания');
+ const job=await api('/api/jobs/'+encodeURIComponent(currentJob));
  $('jobInfo').classList.remove('collapsed');
- $('jobInfo').textContent='Задание '+currentJob+' создано. Нажми Проверить результат.';
- say('GPU worker запущен только для этого задания');
+ $('jobInfo').textContent='Задание '+currentJob+' · '+job.status+' · '+(job.completed||0)+'/'+(job.total||0)+(job.error?'\n'+job.error:'');
+ const busy=['running','queued'].includes(job.status);
+ $('jobProgress').classList.toggle('collapsed',!busy);
+ if(busy){
+   $('jobStage').textContent=(job.stage||'Загрузка модели')+' · '+(job.progress||0)+'%';
+   $('jobBar').value=Number(job.progress||0);
+   renderWaiting(job.total);
+   scheduleJobRefresh();
+ }else{stopJobPolling();await refreshJobHistory(false)}
+ $('previews').replaceChildren(...(job.outputs||[]).map(o=>{
+   const a=document.createElement('a');a.href=o.preview_url;a.target='_blank';a.rel='noopener';
+   const img=document.createElement('img');img.src=o.preview_url;img.loading='lazy';img.alt='Вариант '+o.variant;
+   a.append(img);return a;
+ }));
+ return job;
+}
+async function refreshJobHistory(restore){
+ const r=await api('/api/jobs/recent');
+ const previous=$('jobHistory').value;
+ $('jobHistory').replaceChildren(...r.jobs.map(j=>opt(j.job_id,
+  j.status+' · '+(j.source==='quick'?'Быстрый':'Граф')+' · '+j.prompt_preview.slice(0,42))));
+ const target=(restore?currentJob:previous)||r.jobs[0]?.job_id||'';
+ if(target && r.jobs.some(j=>j.job_id===target))$('jobHistory').value=target;
+ if(restore&&!currentJob&&r.jobs.length){
+   currentJob=r.jobs[0].job_id;
+   await updateJob();
+ }
+}
+$('generate').onclick=()=>task(async()=>{
+ $('generate').disabled=true;
+ try{
+  const [width,height]=$('resolution').value.split('x').map(Number);
+  const settings={mode:$('renderMode').value,variants:Number($('variants').value),
+    width,height,seed:Number($('seed').value),steps:Number($('steps').value),
+    cfg:Number($('cfg').value),strength:Number($('strength').value),
+    reference:$('reference').value,lora:$('lora').value};
+  let response;
+  if(currentMode==='quick'){
+    const prompt=$('quickPrompt').value.trim();
+    if(!prompt)throw Error('Напиши, что нужно нарисовать');
+    const negative_prompt=$('quickNegative').value;
+    await api('/api/quick/draft/saved','PUT',{prompt,negative_prompt});
+    response=await api('/api/quick/generate','POST',{...settings,prompt,negative_prompt});
+  }else{
+    if(!project||!chosen)throw Error('Выбери узел графа или переключись в быстрый режим');
+    await saveNode();
+    response=await api('/api/studio/projects/'+project.id+'/nodes/'+chosen+'/generate','POST',settings);
+  }
+  currentJob=response.job_id;
+  $('jobInfo').classList.remove('collapsed');
+  $('jobInfo').textContent='Задание '+currentJob+' принято';
+  $('jobProgress').classList.remove('collapsed');
+  $('jobBar').value=0;
+  $('jobStage').textContent='В очереди · загрузка графической модели';
+  renderWaiting(settings.variants);
+  await refreshJobHistory(false);
+  scheduleJobRefresh();
+  say('Генерация запущена на RTX 3060 · ожидание показано в карточках');
+ }finally{$('generate').disabled=false}
 });
 $('checkJob').onclick=()=>task(async()=>{
- if(!currentJob)currentJob=rowById(chosen)?.last_job||'';
- if(!currentJob)throw Error('Сначала запусти генерацию');
- const r=await api('/api/jobs/'+encodeURIComponent(currentJob));
- $('jobInfo').classList.remove('collapsed');
- $('jobInfo').textContent='Задание '+r.status+' · '+r.completed+'/'+r.total+(r.error?'\n'+r.error:'');
- $('previews').replaceChildren(...(r.outputs||[]).map(o=>{
-  const a=document.createElement('a');a.href=o.preview_url;a.target='_blank';a.rel='noopener';
-  const img=document.createElement('img');img.src=o.preview_url;img.loading='lazy';img.alt='Вариант '+o.variant;
-  a.append(img);return a;
- }));
+ if(!currentJob)currentJob=$('jobHistory').value||rowById(chosen)?.last_job||'';
+ await updateJob();
 });
+$('restoreJob').onclick=()=>task(async()=>{
+ currentJob=$('jobHistory').value;if(!currentJob)throw Error('Нет сохранённых заданий');
+ await updateJob();
+});
+$('refreshJobs').onclick=()=>task(()=>refreshJobHistory(false));
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&currentJob)task(updateJob)});
+
 $('kbUpload').onclick=()=>task(async()=>{
  if(!project)throw Error('Выбери проект');
  const f=$('kbFile').files[0];if(!f)throw Error('Выбери TXT/MD файл');
@@ -491,5 +610,15 @@ $('kbUpload').onclick=()=>task(async()=>{
  const r=await api('/api/studio/projects/'+project.id+'/knowledge','POST',form);
  say('Добавлено '+r.chunks+' фрагментов знаний к этому проекту');
 });
-loadProjects().then(()=>refreshResources()).then(status).catch(e=>say(e.message));
+async function startup(){
+  const remembered=await api('/api/quick/draft/saved');
+  $('quickPrompt').value=remembered.prompt||'';
+  $('quickNegative').value=remembered.negative_prompt||'';
+  try{switchMode(localStorage.getItem('draftsman_mode')||'quick')}catch(e){switchMode('quick')}
+  await Promise.all([loadProjects(),refreshResources()]);
+  await refreshJobHistory(true);
+  await status();
+}
+startup().catch(e=>say(e.message));
+
 </script></body></html>

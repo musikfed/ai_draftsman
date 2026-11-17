@@ -129,7 +129,7 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
    <div class="muted">Изображения рисует SDXL, а не Qwen. Обучение своих персонажей через LoRA ещё не подключено.
    <a href="https://github.com/musikfed/ai_draftsman/blob/main/docs/TRAINING_AND_MEMORY.md" target="_blank" rel="noopener noreferrer" style="color:var(--orange)">Модели, обучение и память — инструкция</a></div>
    <details><summary data-t="imageModels">Графическая модель (отдельно от LLM)</summary>
-    <div class="toolbar"><button id="scanModels" data-t="scan">Найти веса на дисках</button><button id="downloadImage" data-t="downloadImage">Скачать Illustrious XL</button><button id="imageStatus" data-t="downloadStatus">Статус загрузки</button></div>
+    <div class="toolbar"><button id="scanModels" data-t="scan">Найти веса на дисках</button><button id="downloadImage">Скачать выбранную SDXL</button><button id="imageStatus" data-t="downloadStatus">Статус загрузки</button></div>
     <pre id="modelInfo"></pre>
    </details>
   </div>
@@ -156,13 +156,15 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
    <div class="muted" data-t="renderHelp">Для одного утверждённого узла; количество вариантов не меняет число узлов.</div>
    <div class="grid2">
     <div><label data-t="mode">Режим</label><select id="renderMode"><option value="txt2img">По описанию</option><option value="img2img">По образцу</option></select></div>
-    <div><label data-t="variants">Вариантов</label><select id="variants"><option>1</option><option>2</option><option>3</option></select></div>
+    <div><label data-t="variants">Вариантов</label><input id="variants" type="text" inputmode="numeric" value="авто" placeholder="авто или 7" maxlength="4" title="Число 1–48 либо авто: «Сделай 7 вариантов»"></div>
     <div><label data-t="resolution">Размер</label><select id="resolution"><option value="768x960">768 × 960</option><option value="896x1120">896 × 1120</option></select></div>
     <div><label>Seed (0 = random)</label><input id="seed" type="number" value="0" min="0"></div>
     <div><label>Steps (10–60)</label><input id="steps" type="number" min="10" max="60" value="28"></div>
     <div><label>CFG (1–12)</label><input id="cfg" type="number" min="1" max="12" step="0.5" value="6.5"></div>
    </div>
-   <label data-t="strength">Сила img2img (0.15–0.90)</label><input id="strength" type="number" min=".15" max=".9" step=".05" value=".55">
+   <label for="imageCheckpoint">Графическая модель SDXL</label><select id="imageCheckpoint"><option value="illustrious-xl-v2">Illustrious XL 2.0</option></select>
+<div class="muted" id="modelRole">Ollama пишет промпты. SDXL рисует на GPU; LoRA помогает сохранять стиль.</div><div class="muted" id="variantsHint">Авто — из текста («сделай 7 вариантов»), либо введи 1–48.</div>
+<label data-t="strength">Сила img2img (0.15–0.90)</label><input id="strength" type="number" min=".15" max=".9" step=".05" value=".55">
    <label data-t="reference">Изображение-образец (только для img2img)</label><select id="reference"><option value="">Без референса</option></select>
    <div class="toolbar"><input id="referenceFile" type="file" accept=".jpg,.jpeg,.png,.webp" class="grow"><button id="uploadReference" data-t="upload">Добавить образец</button></div>
    <label>SDXL LoRA</label><select id="lora"><option value="">Без LoRA</option></select>

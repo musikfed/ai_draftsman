@@ -17,6 +17,42 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:8b")
 CANON = json.loads((BASE / "canon" / "karate_linux.json").read_text(encoding="utf-8"))
 DB = DATA / "draftsman.db"
 app = Flask(__name__)
+_download_lock = threading.Lock()
+_download_state = {"status": "idle", "message": "Загрузка ещё не запускалась"}
+
+def connection():
+    db = sqlite3.connect(DB)
+    db.row_factory = sqlite3.Row
+    return db
+
+def initialize():
+    """Create/migrate only Draftsman's own SQLite tables, never touch external services."""
+    with connection() as db:
+        db.executescript("""
+        CREATE TABLE IF NOT EXISTS slides (
+            lesson INTEGER NOT NULL, slide INTEGER NOT NULL,
+            story TEXT NOT NULL DEFAULT '',
+            prompt TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'planned',
+            PRIMARY KEY(lesson, slide)
+        );
+        CREATE TABLE IF NOT EXISTS rag (
+            id INTEGER PRIMARY KEY, source TEXT NOT NULL, chunk TEXT NOT NULL
+        );
+        CREATE VIRTUAL TABLE IF NOT EXISTS rag_fts USING fts5(source, chunk);
+        """)
+        for lesson in CANON:
+            for number in range(1, 6):
+                db.execute("INSERT OR IGNORE INTO slides(lesson, slide) VALUES(?, ?)",
+                           (lesson["id"], number))
+        has_canon = db.execute("SELECT 1 FROM rag WHERE source='Canon' LIMIT 1").fetchone()
+        if not has_canon:
+            for lesson in CANON:
+                line = f'Урок {lesson["id"]:03d}: {lesson["title"]}. {lesson["story"]}'
+                db.execute("INSERT INTO rag(source,chunk) VALUES(?,?)", ("Canon",line))
+                db.execute("INSERT INTO rag_fts(source,chunk) VALUES(?,?)", ("Canon",line))
+
+initialize()
 
 def reach(url):
     try:
@@ -67,6 +103,77 @@ def shutdown():
 def model_scan():
     roots = os.getenv("DRAFTSMAN_MODEL_ROOTS", "/1tbdisk").split(os.pathsep)
     return jsonify(scan_models([p for p in roots if p]))
+
+
+@app.get("/api/models/download/status")
+def model_download_status():
+    with _download_lock:
+        return jsonify(dict(_download_state))
+
+
+@app.post("/api/models/download/illustrious")
+def model_download_illustrious():
+    """Explicit opt-in: official Hugging Face repository only; download to user project folder."""
+    with _download_lock:
+        if _download_state["status"] == "running":
+            return jsonify(error="Download is already running"), 409
+        _download_state.update(status="running", message="Downloading Illustrious XL 2.0...", path=None)
+    def worker():
+        try:
+            from huggingface_hub import hf_hub_download
+            directory = BASE / "models" / "checkpoints"
+            directory.mkdir(parents=True, exist_ok=True)
+            local_path = hf_hub_download(
+                repo_id="OnomaAIResearch/Illustrious-XL-v2.0",
+                filename="Illustrious-XL-v2.0.safetensors",
+                local_dir=directory
+            )
+            with _download_lock:
+                _download_state.update(status="completed", path=str(local_path),
+                                       message="Checkpoint downloaded. Configure ComfyUI model path.")
+        except Exception as exc:
+            with _download_lock:
+                _download_state.update(status="failed", message=str(exc)[:500])
+    threading.Thread(target=worker, daemon=True, name="hf-model-download").start()
+    return jsonify(status="running"), 202
+
+
+@app.post("/api/gpu/free")
+def free_vram():
+    """Unload only Ollama/ComfyUI model caches. Never kill unrelated GPU processes."""
+    report = {"comfyui": "not running", "ollama": [], "warnings": []}
+    if reach(COMFY_URL + "/system_stats"):
+        try:
+            q = requests.get(COMFY_URL + "/queue", timeout=3)
+            q.raise_for_status()
+            queued = q.json()
+            if queued.get("queue_running") or queued.get("queue_pending"):
+                report["comfyui"] = "busy — not unloading during generation"
+            else:
+                r = requests.post(COMFY_URL + "/free",
+                    json={"unload_models": True, "free_memory": True}, timeout=15)
+                r.raise_for_status()
+                report["comfyui"] = "unload requested"
+        except (requests.RequestException, ValueError) as exc:
+            report["warnings"].append("ComfyUI: " + str(exc)[:150])
+    try:
+        p = requests.get(OLLAMA_URL + "/api/ps", timeout=5)
+        p.raise_for_status()
+        names = [m.get("name") or m.get("model") for m in p.json().get("models", [])]
+        for name in filter(None, names):
+            try:
+                r = requests.post(OLLAMA_URL + "/api/generate",
+                     json={"model": name, "keep_alive": "0s", "stream": False},timeout=20)
+                r.raise_for_status()
+                report["ollama"].append({"model":name,"result":"unload requested"})
+            except requests.RequestException as exc:
+                report["ollama"].append({"model":name,"result":"error: "+str(exc)[:120]})
+    except (requests.RequestException, ValueError) as exc:
+        report["warnings"].append("Ollama: " + str(exc)[:150])
+    report["note"] = ("Requests are sent to the local model managers. "
+        "Other processes (including desktop and unrelated services) are not touched. "
+        "Memory may be retained by active jobs and GPU display.")
+    return jsonify(report)
 
 
 @app.get("/api/models/catalog")

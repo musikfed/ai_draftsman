@@ -13,6 +13,7 @@ import sys
 import time
 import traceback
 from pathlib import Path
+from studio.checkpoints import DEFAULT_CHECKPOINT, get_checkpoint
 
 BASE = Path(__file__).resolve().parents[1]
 
@@ -32,7 +33,8 @@ def generate(spec: dict, state_path: Path) -> None:
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is unavailable to torch. Verify the isolated cu124 PyTorch install.")
 
-    checkpoint = (BASE / "models/checkpoints/Illustrious-XL-v2.0.safetensors").resolve()
+    checkpoint, model_meta = get_checkpoint(str(spec.get("checkpoint") or DEFAULT_CHECKPOINT))
+    checkpoint = checkpoint.resolve()
     if not checkpoint.is_file():
         raise FileNotFoundError(f"Image checkpoint missing: {checkpoint}. Download it from the studio first.")
 
@@ -47,7 +49,7 @@ def generate(spec: dict, state_path: Path) -> None:
     write_state(state_path, state)
     pipe = cls.from_single_file(
         str(checkpoint),
-        config="stabilityai/stable-diffusion-xl-base-1.0",
+        config=model_meta["config"],
         torch_dtype=torch.float16,
         use_safetensors=True,
     )
@@ -73,7 +75,7 @@ def generate(spec: dict, state_path: Path) -> None:
         init_image = ImageOps.fit(Image.open(image).convert("RGB"),
                                   (int(spec["width"]), int(spec["height"])),
                                   Image.Resampling.LANCZOS)
-    state["stage"] = "Модель загружена · подготовка генерации"
+    state["stage"] = model_meta["title"] + " · подготовка генерации"
     state["progress"] = 2
     write_state(state_path, state)
     target = Path(spec["output_dir"]).resolve()
@@ -104,7 +106,7 @@ def generate(spec: dict, state_path: Path) -> None:
             result = pipe(image=init_image, strength=float(spec["strength"]), **common)
         else:
             result = pipe(width=int(spec["width"]), height=int(spec["height"]), **common)
-        state["stage"] = f"Сохранение варианта {index + 1}"
+        state["stage"] = f"Сохранение варианта {index + 1} / {spec['variants']}"
         write_state(state_path, state)
         image = result.images[0].convert("RGB")
         prefix = f'{int(spec["lesson"]):03d}_{int(spec["slide"]):02d}_v{index+1:02d}'

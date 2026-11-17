@@ -52,6 +52,10 @@ def initialize():
 
 initialize()
 
+# Generic project studio. Legacy comic endpoints are kept for existing data.
+from studio.projects import register as register_project_studio
+register_project_studio(app, DB, DATA, OLLAMA_URL, OLLAMA_MODEL, CANON)
+
 def reach(url):
     try:
         return requests.get(url,timeout=1.5).ok

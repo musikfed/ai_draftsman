@@ -350,6 +350,99 @@ def generate():
         return jsonify(error=str(exc)),422
 
 
+@app.post("/api/quick/generate")
+def quick_generate():
+    """Direct txt2img/img2img. No project, graph or approved node required."""
+    data = request.get_json(silent=True) or {}
+    prompt = str(data.get("prompt") or "").strip()
+    negative_prompt = str(data.get("negative_prompt") or "").strip()
+    if not prompt or len(prompt) > 16000 or len(negative_prompt) > 4000:
+        return jsonify(error="Enter a positive prompt (up to 16000 chars) and optional negative prompt (up to 4000)."), 400
+    mode = str(data.get("mode", "txt2img"))
+    if mode not in ("txt2img", "img2img"):
+        return jsonify(error="Choose text-to-image or image-to-image"), 400
+    try:
+        variants = int(data.get("variants", 1))
+        steps = int(data.get("steps", 28))
+        seed = int(data.get("seed", 0))
+        cfg = float(data.get("cfg", 6.5))
+        strength = float(data.get("strength", 0.55))
+        width = int(data.get("width", 768))
+        height = int(data.get("height", 960))
+    except (TypeError, ValueError, OverflowError):
+        return jsonify(error="Invalid numeric parameter"), 400
+    if not (1 <= variants <= 3 and 10 <= steps <= 60 and
+            1 <= cfg <= 12 and 0.15 <= strength <= 0.9 and
+            0 <= seed < 2**32 and
+            (width, height) in ((768, 960), (896, 1120))):
+        return jsonify(error="Image settings outside supported 12GB SDXL limits"), 400
+    if seed == 0:
+        seed = secrets.randbelow(2**31 - 100)
+
+    reference = ""
+    if mode == "img2img":
+        filename = str(data.get("reference") or "")
+        if not re.fullmatch(r"[0-9a-f]{32}\.png", filename):
+            return jsonify(error="Upload and select an image reference"), 400
+        source = (DATA / "references" / filename).resolve()
+        if source.parent != (DATA / "references").resolve() or not source.is_file():
+            return jsonify(error="Reference is missing"), 404
+        reference = str(source)
+    lora = str(data.get("lora") or "")
+    if lora and (not re.fullmatch(r"[A-Za-z0-9_. -]{1,160}\.safetensors", lora)
+                 or not (BASE / "models" / "loras" / lora).is_file()):
+        return jsonify(error="Selected SDXL LoRA not found"), 400
+
+    spec = {
+        "lesson": 0, "slide": 0, "source": "quick",
+        "prompt": prompt, "negative_prompt": negative_prompt,
+        "mode": mode, "variants": variants, "steps": steps,
+        "cfg": cfg, "strength": strength, "seed": seed,
+        "width": width, "height": height,
+        "reference": reference, "lora": lora, "lora_scale": 0.7
+    }
+    try:
+        job_id = submit_job(spec)
+    except (RuntimeError, FileNotFoundError, OSError) as error:
+        return jsonify(error=str(error)), 422
+    return jsonify(job_id=job_id, submitted=True,
+                   note="Direct GPU job started without project or graph"), 202
+
+
+@app.post("/api/quick/draft")
+def quick_draft():
+    """Optional LLM assistance for prompt wording; does not start GPU or mutate projects."""
+    data = request.get_json(silent=True) or {}
+    idea = str(data.get("idea") or "").strip()[:6000]
+    if not idea:
+        return jsonify(error="Enter a description for prompt drafting"), 400
+    model = str(data.get("model") or OLLAMA_MODEL)
+    if not re.fullmatch(r"[A-Za-z0-9_.:/-]{2,128}", model):
+        return jsonify(error="Invalid Ollama model"), 400
+    try:
+        resp = requests.post(OLLAMA_URL + "/api/chat", json={
+            "model": model, "stream": False, "format": "json", "keep_alive": "0s",
+            "messages": [
+                {"role": "system", "content":
+                 "You are a visual prompt editor. Return only JSON keys "
+                 "prompt and negative_prompt. Convert the user's request into "
+                 "one concrete SDXL image prompt. Do not add a graph, franchise, "
+                 "comic characters or any unrelated ideas. Keep user's requested style."},
+                {"role": "user", "content": idea}
+            ]
+        }, timeout=180)
+        resp.raise_for_status()
+        answer = json.loads(resp.json()["message"]["content"])
+        positive = str(answer.get("prompt") or "").strip()[:16000]
+        if not positive:
+            return jsonify(error="LLM returned no prompt"), 422
+        return jsonify(prompt=positive,
+                       negative_prompt=str(answer.get("negative_prompt") or "")[:4000],
+                       model=model)
+    except (ValueError, KeyError, requests.RequestException) as error:
+        return jsonify(error=f"Ollama unavailable: {error}"), 502
+
+
 @app.get("/api/jobs/<job_id>")
 def job_status(job_id):
     j=get_job(job_id)

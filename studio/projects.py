@@ -354,9 +354,16 @@ def register(app, db_path: Path, data_dir: Path, ollama_url: str, default_model:
                 return jsonify(error="Slides have already been imported"), 409
             prev = node["id"]
             created = []
-            old = c.execute(
+            old = [dict(item) for item in c.execute(
                 "SELECT * FROM slides WHERE lesson=? ORDER BY slide", (lesson_num,)
-            ).fetchall()
+            )]
+            # Fresh generic installs have no legacy slides; build five empty
+            # editable slots only after the user explicitly imports a lesson.
+            if not old:
+                old = [
+                    {"slide": n, "story": "", "prompt": "", "status": "planned"}
+                    for n in range(1, 6)
+                ]
             for row in old:
                 cur = c.execute(
                     "INSERT INTO studio_nodes(project_id,title,kind,notes,prompt,status,x,y) "

@@ -243,7 +243,7 @@ function renderGraph(){
  }
  $('connectTo').replaceChildren(...nodes.filter(n=>n.id!==chosen).map(n=>opt(n.id,n.title)));
  $('links').replaceChildren();
- for(const edge of edges){
+ for(const edge of edges.filter(e=>e.source===chosen||e.target===chosen)){
    const src=rowById(edge.source),dst=rowById(edge.target);
    const b=document.createElement('button');
    b.textContent=(src?.title||'?')+' → '+(dst?.title||'?')+' ×';

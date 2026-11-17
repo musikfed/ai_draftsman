@@ -98,14 +98,6 @@ CATALOG = [
         "role": "anime/manga checkpoint; starting choice for character LoRA",
         "model_url": "https://huggingface.co/OnomaAIResearch/Illustrious-XL-v2.0",
         "license_note": "CreativeML Open RAIL; inspect exact checkpoint terms before monetizing",
-        "download": "Choose the appropriate .safetensors file from official model Files page; place under ComfyUI/models/checkpoints",
-    },
-    {
-        "name": "ComfyUI",
-        "family": "inference backend",
-        "role": "runs image checkpoints, ControlNet, LoRA and multi-reference workflows",
-        "model_url": "https://github.com/Comfy-Org/ComfyUI",
-        "license_note": "Check checkpoint and LoRA licenses individually",
-        "download": "Install from the official repository, separate from Ollama",
+        "download": "Choose the appropriate .safetensors file from official model Files page; place under models/checkpoints",
     },
 ]

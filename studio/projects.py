@@ -12,7 +12,9 @@ from pathlib import Path
 
 import requests
 from flask import jsonify, request
-from studio.jobs import submit_job
+from studio.jobs import submit_job, current_job
+from studio.checkpoints import CHECKPOINTS, DEFAULT_CHECKPOINT
+from studio.parameters import choose_variants, MAX_VARIANTS
 
 PULL_STATE = {"status": "idle", "model": "", "message": "", "completed": 0, "total": 0}
 PULL_LOCK = threading.Lock()
@@ -414,6 +416,8 @@ def register(app, db_path: Path, data_dir: Path, ollama_url: str, default_model:
 
     @app.post("/api/studio/projects/<int:project_id>/nodes/<int:node_id>/ai")
     def studio_ai_draft(project_id, node_id):
+        if current_job():
+            return jsonify(error="GPU renderer busy; wait before starting Ollama draft"), 409
         with db() as c:
             item = assemble(c, project_id, node_id)
             if item:
@@ -474,7 +478,7 @@ def register(app, db_path: Path, data_dir: Path, ollama_url: str, default_model:
         if mode not in ("txt2img","img2img"):
             return jsonify(error="Unsupported image mode"),400
         try:
-            count=int(data.get("variants",1))
+            count=choose_variants(data.get("variants", "auto"), prompt)
             steps=int(data.get("steps",28))
             cfg=float(data.get("cfg",6.5))
             strength=float(data.get("strength",0.55))
@@ -483,7 +487,7 @@ def register(app, db_path: Path, data_dir: Path, ollama_url: str, default_model:
             height=int(data.get("height",960))
         except (TypeError,ValueError):
             return jsonify(error="Invalid image parameters"),400
-        if not (1<=count<=3 and 10<=steps<=60 and 1<=cfg<=12
+        if not (1<=count<=MAX_VARIANTS and 10<=steps<=60 and 1<=cfg<=12
                 and 0.15<=strength<=0.9 and 0<=seed<2**32
                 and (width,height) in ((768,960),(896,1120))):
             return jsonify(error="Image parameters outside supported SDXL limits"),400
@@ -501,8 +505,12 @@ def register(app, db_path: Path, data_dir: Path, ollama_url: str, default_model:
                      or not (db_path.parent.parent/"models"/"loras"/lora).is_file()):
             # db_path is data/draftsman.db; parent.parent is repository root
             return jsonify(error="LoRA missing"),400
+        model_id=str(data.get("checkpoint") or DEFAULT_CHECKPOINT)
+        if model_id not in CHECKPOINTS:
+            return jsonify(error="Unsupported SDXL image checkpoint"),400
         try:
             job_id=submit_job({
+                "checkpoint":model_id,
                 "lesson":project_id,"slide":node_id,"project_id":project_id,"node_id":node_id,
                 "prompt":prompt,"negative_prompt":negative,
                 "mode":mode,"variants":count,"seed":seed,"steps":steps,

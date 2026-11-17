@@ -53,8 +53,21 @@ def disk_snapshot() -> list[dict]:
     items = []
     seen = set()
     for partition in psutil.disk_partitions(all=False):
-        # Avoid tmpfs, overlays, /proc etc. Keep separately mounted real disks.
-        if not partition.device.startswith("/dev/") or partition.mountpoint in seen:
+        # Snap packages are read-only squashfs images mounted as /dev/loop*.
+        # They show 100% "usage" by design; they are NOT full physical disks.
+        mount = partition.mountpoint
+        device = partition.device
+        filesystem = partition.fstype.lower()
+        if (
+            not device.startswith("/dev/")
+            or device.startswith("/dev/loop")
+            or filesystem in {"squashfs", "overlay", "tmpfs", "devtmpfs", "ramfs"}
+            or mount == "/boot/efi"
+            or mount == "/snap"
+            or mount.startswith("/snap/")
+            or mount.startswith("/var/lib/snapd/")
+            or mount in seen
+        ):
             continue
         seen.add(partition.mountpoint)
         try:

@@ -1,21 +1,35 @@
-# Image model and ComfyUI workflow
+# Image engine setup — PEGINELAB AI Draftsman
 
-The Flask studio is an orchestrator; it does **not** download a checkpoint or pretend that image generation is ready.
+The browser dashboard on **http://192.168.0.100:9898** is a lightweight Flask app. Its image engine is separate, never auto-started. The user launches/stops ComfyUI from its own terminal when needed.
 
-1. Install compatible NVIDIA driver / CUDA-enabled PyTorch on the host and ComfyUI separately in `/1tbdisk/AI/ComfyUI`, with its own `.venv`.
-2. Select and install an image checkpoint with a license suitable for the project. Start with a 12GB-compatible SDXL / Illustrious XL checkpoint; optionally test FLUX models using low-VRAM offloading.
-3. Build and validate a **working** ComfyUI graph in the ComfyUI interface first. Use the checkpoint's supported nodes. Test one image manually.
-4. Export using ComfyUI's **Save (API Format)** workflow option.
-5. In the resulting API JSON, locate the main positive prompt text field and put the literal marker `{{PROMPT}}` in it. Do not use that marker in any other node.
-6. Save it as `data/workflows/comic_api.json`.
-7. Open the studio at :9898, turn the image engine ON, plan the lesson, review its five slides, mark a slide approved, then press Generate. The backend submits the validated workflow to internal ComfyUI :8188.
-8. For export, use `uv run python scripts/export_png8.py input.png output.png`. Final comic size is 800x1000, indexed PNG 256 colors.
+## Local model discovery and official download
 
-## Limits of MVP
-- Submitted ComfyUI prompt IDs are shown, but **automatic collecting, assembly and gallery browsing are not implemented yet**.
-- Character-consistency training (LoRA), actual model downloads, reference attachment and automated quality checking are planned next steps.
-- The browser does not calculate images or run inference; all workloads are on the Ubuntu server.
-- The web page does not poll continuously; refresh status manually.
-- To free VRAM after Ollama scenario planning, Ollama requests use `keep_alive: "0s"`. Other Ollama users and the service are not stopped.
-- The OFF button stops **only** the ComfyUI process launched by this app, and refuses to stop it while jobs are queued/running.
-- LAN HTTP has no authentication in the MVP, intentionally intended for isolated trusted test networks. Do not expose port 9898 publicly, and never port-forward it.
+The **Найти модели на дисках** button scans `/1tbdisk` (limited to protect latency). It reports candidate weights, not guaranteed working image models.
+
+The **Показать модели Ollama** button lists existing local LLM/VLM/embedding models: Qwen3:8B scripts, Qwen2.5VL:7B image analysis, nomic-embed-text for future vector RAG. They do not themselves paint a panel of manga.
+
+For starter images choose **Illustrious XL v2.0** (SDXL compatible) from the official `OnomaAIResearch/Illustrious-XL-v2.0` repository, CreativeML OpenRAIL-M. The button **Скачать Illustrious XL v2.0** starts a multi-GB download only on click; **Состояние загрузки** reads its status. Downloaded checkpoint: `<project>/models/checkpoints/Illustrious-XL-v2.0.safetensors`. Check model terms before commercial use. Downloads are not started merely by opening the page.
+
+## ComfyUI
+
+1. Choose a compatible NVIDIA driver + PyTorch environment before installing ComfyUI. Avoid changing the host's drivers on an already running server without a separate compatibility review.
+2. Install ComfyUI under `<project>/runtime/ComfyUI` with its own `.venv`. It uses GPU separately from Ollama; GPU workloads compete for the same 12 GiB VRAM.
+3. After ComfyUI is installed, run `uv run python scripts/configure_comfy_models.py`. If `extra_model_paths.yaml` already exists, the script refuses to overwrite and prints the stanza for manual merge.
+4. Launch ComfyUI **in a separate terminal** on localhost port 8188. No startup button is present in the studio.
+5. Select the Illustrious checkpoint and construct a compatible SDXL text-to-image workflow. Validate one image directly in ComfyUI (character consistency and Russian lettering are not automatic).
+6. Export workflow as **API Format**. Replace exactly one positive prompt text field with the literal `{{PROMPT}}` and save it under `data/workflows/comic_api.json`.
+7. In AI Draftsman: select episode, use Ollama to create five drafts, review/approve each, press Generate. A prompt ID is returned from ComfyUI.
+8. Final output: `uv run python scripts/export_png8.py input.png output.png` — 800×1000, indexed PNG-8 up to 256 colors. The export utility preserves the canvas by padding, not cropping.
+
+## Memory controls and status
+
+- **ВЫКЛ (Выключить студию)** ends the Python Flask application itself; the user restarts it with `bash scripts/run.sh`.
+- **Освободить VRAM** sends `POST /free` to ComfyUI when idle, plus Ollama `/api/generate` keep_alive=0 to loaded models identified using `/api/ps`. This is an explicit unload request, not a process kill or a guarantee that all VRAM will be free. It does not kill Xorg or other unrelated programs.
+- Monitor CPU, RAM, VRAM, disks, swap, zombies via **Обновить показатели**. No automatic polling is enabled.
+
+## MVP limitations
+
+- Full automatic image collection, previews, finished ZIP creation, LoRA training, multi-reference/ControlNet workflows, and semantic vector/graph database integration are **planned but not yet implemented**.
+- The saved five-slide plan and SQLite FTS5-based textual RAG are implemented; these are not yet a trained image model.
+- No GPU model is downloaded or installed unless the user explicitly triggers the action.
+- Only use this HTTP dashboard on a trusted test LAN. No authentication is included in the MVP.

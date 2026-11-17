@@ -76,7 +76,7 @@ def find_context(query):
 
 @app.get("/")
 def home():
-    return render_template("index.html")
+    return render_template("studio.html")
 
 @app.get("/api/status")
 def status():

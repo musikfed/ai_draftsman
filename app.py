@@ -5,7 +5,7 @@ from flask import Flask, jsonify, render_template, request, send_file
 import requests
 from studio.monitor import collect_snapshot
 from studio.models import CATALOG, scan_models
-from studio.jobs import submit_job, get_job, current_job, CHECKPOINT, WORKER_PY
+from studio.jobs import submit_job, get_job, current_job, recent_jobs, CHECKPOINT, WORKER_PY
 
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.getenv("DRAFTSMAN_DATA", str(BASE / "data"))).resolve()
@@ -38,6 +38,12 @@ def initialize():
             id INTEGER PRIMARY KEY, source TEXT NOT NULL, chunk TEXT NOT NULL
         );
         CREATE VIRTUAL TABLE IF NOT EXISTS rag_fts USING fts5(source, chunk);
+        CREATE TABLE IF NOT EXISTS quick_draft (
+            id INTEGER PRIMARY KEY CHECK(id=1),
+            prompt TEXT NOT NULL DEFAULT '',
+            negative_prompt TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
         """)
         # Legacy tables are retained for previously created Karate Linux data.
         # A new universal installation starts with no comics or forced 24x5 rows.
@@ -348,6 +354,34 @@ def generate():
                        note="Separate GPU process started; check status manually"),202
     except (FileNotFoundError,RuntimeError,OSError) as exc:
         return jsonify(error=str(exc)),422
+
+
+@app.get("/api/quick/draft/saved")
+def quick_saved():
+    with connection() as db:
+        row=db.execute("SELECT prompt,negative_prompt,updated_at FROM quick_draft WHERE id=1").fetchone()
+    return jsonify(dict(row) if row else {"prompt":"","negative_prompt":"","updated_at":None})
+
+
+@app.put("/api/quick/draft/saved")
+def quick_save_draft():
+    p=request.get_json(silent=True) or {}
+    positive=str(p.get("prompt") or "")
+    negative=str(p.get("negative_prompt") or "")
+    if len(positive)>16000 or len(negative)>4000:
+        return jsonify(error="Prompt too long"),400
+    with connection() as db:
+        db.execute("""INSERT INTO quick_draft(id,prompt,negative_prompt,updated_at)
+            VALUES(1,?,?,CURRENT_TIMESTAMP)
+            ON CONFLICT(id) DO UPDATE SET
+                prompt=excluded.prompt, negative_prompt=excluded.negative_prompt,
+                updated_at=CURRENT_TIMESTAMP""",(positive,negative))
+    return jsonify(saved=True)
+
+
+@app.get("/api/jobs/recent")
+def jobs_recent():
+    return jsonify(jobs=recent_jobs(limit=20))
 
 
 @app.post("/api/quick/generate")

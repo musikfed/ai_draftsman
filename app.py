@@ -129,7 +129,7 @@ def model_download_illustrious():
             )
             with _download_lock:
                 _download_state.update(status="completed", path=str(local_path),
-                                       message="Checkpoint downloaded. Configure ComfyUI model path.")
+                                       message="Checkpoint downloaded. Independent Diffusers worker can now use it.")
         except Exception as exc:
             with _download_lock:
                 _download_state.update(status="failed", message=str(exc)[:500])
@@ -327,13 +327,13 @@ def generate():
     reference_name=str(p.get("reference",""))
     reference=None
     if mode=="img2img":
-        if not re.fullmatch(r"[0-9a-f]{32}\\.png",reference_name):
+        if not re.fullmatch(r"[0-9a-f]{32}\.png",reference_name):
             return jsonify(error="Upload and select a reference image"),400
         reference=DATA/"references"/reference_name
         if not reference.is_file():
             return jsonify(error="Reference file not found"),404
     lora=str(p.get("lora",""))
-    if lora and (not re.fullmatch(r"[A-Za-z0-9_. -]{1,160}\\.safetensors",lora)
+    if lora and (not re.fullmatch(r"[A-Za-z0-9_. -]{1,160}\.safetensors",lora)
                  or not (BASE/"models"/"loras"/lora).is_file()):
         return jsonify(error="Selected LoRA file not found"),400
     spec={"lesson":lesson,"slide":slide,"mode":mode,

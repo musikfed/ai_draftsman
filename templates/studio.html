@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PEGINELAB AI Draftsman — Studio</title>
+<style>
+:root{color-scheme:dark;--bg:#0a1120;--pane:#152137;--field:#0c1728;--line:#34465f;--orange:#ef912c;--text:#eaf0f8;--muted:#a0b3cd;--green:#6bd2a1}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:11px 20px;border-bottom:1px solid var(--line)}
+.brand{font-size:18px;font-weight:750}.brand b{color:var(--orange)}.sub{font-size:11px;color:var(--muted)}
+main{max-width:1610px;margin:auto;padding:14px}.cols{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(330px,1fr);gap:12px;align-items:start}
+.panel{background:var(--pane);border:1px solid var(--line);border-radius:11px;padding:13px;margin-bottom:12px;min-width:0}
+h2{margin:0 0 10px;font-size:17px}h3{font-size:14px;margin:12px 0 7px}
+button,input,select,textarea{font:inherit;color:var(--text)}button{background:#2a3d58;border:1px solid #435d7b;padding:7px 11px;border-radius:7px;cursor:pointer}button:hover{border-color:var(--orange)}
+button.primary{background:#ba5f18;border-color:#df852c}button.danger{background:#5a2630;border-color:#a85d66}
+input,select,textarea{width:100%;border-radius:6px;border:1px solid var(--line);background:var(--field);padding:7px}
+textarea{min-height:64px;resize:vertical}label{display:block;font-size:12px;color:var(--muted);margin:7px 0 4px}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.toolbar>*{flex-shrink:0}
+.toolbar select,.toolbar input{width:auto}.grow{flex:1 1 140px;min-width:120px}.grow input,.grow select{width:100%}
+.muted{font-size:12px;color:var(--muted)}.status{display:inline-flex;gap:6px;border:1px solid var(--line);border-radius:20px;padding:3px 9px;font-size:11px;color:var(--muted)}
+.dot{width:8px;height:8px;background:#768393;border-radius:50%;align-self:center}.on .dot{background:var(--green)}
+details{border-top:1px solid #2a3e57;padding-top:7px;margin-top:9px}summary{cursor:pointer;color:var(--muted);font-size:12px}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+#canvasViewport{height:485px;max-height:58vh;overflow:auto;background:#0e1929;border:1px solid var(--line);border-radius:9px}
+#canvas{position:relative;width:1540px;height:650px;background-image:linear-gradient(#ffffff07 1px,transparent 1px),linear-gradient(90deg,#ffffff07 1px,transparent 1px);background-size:24px 24px}
+#edges{position:absolute;inset:0;pointer-events:none}
+.graph-node{position:absolute;width:184px;height:82px;text-align:left;touch-action:none;user-select:none;border:1px solid #556984;background:#253853;border-radius:8px;padding:8px;overflow:hidden}
+.graph-node .kind{display:block;font-size:10px;color:#b4c8da;letter-spacing:.07em;text-transform:uppercase}
+.graph-node .name{font-size:12px;font-weight:700;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.graph-node.selected{border:2px solid var(--orange);background:#34425b}
+.graph-node.approved:before{content:"●";color:var(--green);position:absolute;right:8px;top:6px}
+#links{display:flex;flex-wrap:wrap;gap:5px}#links button{font-size:11px;padding:4px 7px}
+pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto;font-size:12px}
+#message{min-height:24px;color:var(--green);font-size:12px;padding:6px 0}
+.meter{height:4px;background:#314159;border-radius:5px;overflow:hidden;margin-top:5px}.meter i{display:block;height:100%;background:var(--orange)}
+#systemMetrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.metric{min-width:0;background:var(--field);border:1px solid var(--line);border-radius:7px;padding:8px}
+.metric strong{display:block;font-size:15px}.metric small{display:block;color:var(--muted);font-size:11px}
+#disks{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}#disks .metric{flex:1 1 150px;padding:6px 9px}
+#previews{display:flex;flex-wrap:wrap;gap:7px}#previews img{width:140px;height:175px;object-fit:contain;border:1px solid var(--line);border-radius:6px}
+#notices{font-size:12px;color:var(--muted)}.collapsed{display:none}
+@media(max-width:970px){.cols{grid-template-columns:1fr}#canvasViewport{height:440px}}
+@media(max-width:600px){header{padding:9px}main{padding:8px}.panel{padding:10px}.grid3,.grid2{grid-template-columns:1fr 1fr}#systemMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style></head><body>
+<header>
+ <div><div class="brand">PEGINELAB <b>AI Draftsman</b></div><div class="sub" data-t="subtitle">Универсальная локальная ИИ-студия · любой проект и граф</div></div>
+ <div class="toolbar"><select id="lang" aria-label="Language"></select>
+ <span id="gpu" class="status">RTX 3060</span>
+ <span id="workerIndicator" class="status"><i class="dot"></i> GPU worker</span>
+ <span id="ollamaIndicator" class="status"><i class="dot"></i> Ollama</span>
+ <button id="refreshStatus">↻</button>
+ <button id="freeVram" data-t="freeVRAM">Освободить VRAM</button>
+ <button id="powerOff" class="danger" data-t="stopStudio">ВЫКЛ студию</button></div>
+</header>
+<main>
+<details class="panel" id="monitorPanel"><summary data-t="monitor">Мониторинг Huananzhi (по нажатию, без фонового опроса)</summary>
+ <div style="margin-top:10px" class="toolbar"><button id="updateMetrics" data-t="update">↻ Обновить показатели</button><span class="muted" data-t="statsInfo">CPU · RAM · VRAM · SWAP · Zombie · реальные диски</span></div>
+ <div id="systemMetrics"></div><div id="disks"></div><div class="muted" id="zombies"></div>
+</details>
+<div class="cols">
+ <section>
+  <div class="panel">
+   <h2 data-t="projects">Проекты</h2>
+   <div class="toolbar"><select id="projectSelect" class="grow"></select>
+    <button id="addProject" class="primary" data-t="newProject">+ Новый проект</button>
+    <button id="karateTemplate" data-t="karateTemplate">Шаблон Karate Linux</button>
+   </div>
+   <details><summary data-t="projectSettings">Настройки проекта и общие промпты</summary>
+    <label data-t="projectName">Название</label><input id="projectName" maxlength="100">
+    <label data-t="projectBrief">Что создаём? Описание, цели и ограничения</label><textarea id="projectBrief"></textarea>
+    <label data-t="globalPositive">Общий положительный промпт: стиль и правила всех рисунков</label><textarea id="basePrompt"></textarea>
+    <label data-t="globalNegative">Общий негативный промпт: чего не должно быть</label><textarea id="globalNegative"></textarea>
+    <label data-t="systemPrompt">Инструкция для LLM-агента: как соблюдать план и граф</label><textarea id="systemPrompt"></textarea>
+    <label data-t="llmSelection">LLM для составления промптов</label><select id="llmSelect"></select>
+    <div class="toolbar" style="margin-top:9px"><button id="saveProject" class="primary" data-t="saveProject">Сохранить проект</button><span class="muted" data-t="saveManual">Изменения сохраняются только по кнопке</span></div>
+   </details>
+  </div>
+  <div class="panel">
+   <div class="toolbar" style="justify-content:space-between;margin-bottom:8px">
+    <h2 style="margin:0" data-t="graph">Редактор графа</h2>
+    <div class="toolbar"><select id="newKind"><option value="scene">Сцена</option><option value="character">Персонаж</option><option value="style">Стиль</option><option value="prompt">Промпт</option><option value="reference">Референс</option><option value="note">Заметка</option><option value="output">Результат</option><option value="lesson">Глава</option><option value="slide">Слайд</option></select>
+     <button id="addNode" class="primary" data-t="addNode">+ Узел</button></div>
+   </div>
+   <div class="muted" data-t="dragHint">Перетаскивай узлы мышью. Создавай связи вручную. Это твой граф, а не фиксированные 24 урока.</div>
+   <div id="canvasViewport"><div id="canvas"><svg id="edges" xmlns="http://www.w3.org/2000/svg"></svg></div></div>
+   <div class="toolbar" style="margin-top:9px">
+    <span class="muted" data-t="connect">Связать выбранный узел с:</span><select id="connectTo"></select>
+    <button id="addEdge" data-t="addEdge">Добавить связь</button>
+   </div>
+   <div id="links"></div><div id="notices"></div>
+  </div>
+  <div class="panel">
+   <h3 data-t="llmManager">Модели LLM — Ollama</h3>
+   <div class="toolbar"><button id="refreshLLM" data-t="installed">Показать установленные</button>
+    <select id="pullSelect" class="grow"><option value="qwen3:8b">qwen3:8b</option><option value="qwen3:4b-instruct">qwen3:4b-instruct</option><option value="llama3.2:3b">llama3.2:3b</option><option value="gemma3:4b">gemma3:4b</option><option value="nomic-embed-text">nomic-embed-text</option></select>
+    <button id="pullLLM" data-t="downloadLLM">Скачать LLM</button><button id="llmStatus" data-t="downloadStatus">Статус загрузки</button>
+   </div>
+   <div class="muted" id="llmInfo">Твои qwen3:8b, qwen3:4b-instruct и другие модели уже доступны. Не нужно скачивать их заново. Новые веса Ollama могут оказаться на системном диске, где мало места.</div>
+   <details><summary data-t="imageModels">Графическая модель (отдельно от LLM)</summary>
+    <div class="toolbar"><button id="scanModels" data-t="scan">Найти веса на дисках</button><button id="downloadImage" data-t="downloadImage">Скачать Illustrious XL</button><button id="imageStatus" data-t="downloadStatus">Статус загрузки</button></div>
+    <pre id="modelInfo"></pre>
+   </details>
+  </div>
+ </section>
+ <section>
+  <div class="panel">
+   <h2 data-t="inspector">Параметры выбранного узла</h2><div class="muted" id="selectedNode">Выбери узел на графе или создай новый</div>
+   <label data-t="nodeName">Название узла</label><input id="nodeTitle">
+   <label data-t="nodeType">Тип</label><select id="nodeKind"><option value="scene">Сцена</option><option value="character">Персонаж</option><option value="style">Стиль</option><option value="prompt">Промпт</option><option value="reference">Референс</option><option value="note">Заметка</option><option value="output">Результат</option><option value="lesson">Глава</option><option value="slide">Слайд</option></select>
+   <label data-t="nodeNotes">Что должно происходить? Сюжет, требования, свойства</label><textarea id="nodeNotes"></textarea>
+   <label data-t="nodePrompt">Промпт рисунка: что нарисовать на этом узле</label><textarea id="nodePrompt" style="min-height:100px"></textarea>
+   <label data-t="nodeNegative">Негативный промпт узла</label><textarea id="nodeNegative" rows="2"></textarea>
+   <label data-t="nodeStatus">Состояние</label><select id="nodeStatus"><option value="draft">Черновик</option><option value="approved">Утверждён</option></select>
+   <div class="toolbar" style="margin-top:10px"><button id="saveNode" class="primary" data-t="saveNode">Сохранить узел</button>
+     <button id="aiDraft" data-t="aiDraft">ИИ: составить промпт</button>
+     <button id="previewPrompt" data-t="previewPrompt">Итоговый промпт</button>
+     <button id="expandLesson" class="collapsed" data-t="expandSlides">Импорт 5 слайдов</button>
+     <button id="deleteNode" class="danger" data-t="deleteNode">Удалить узел</button>
+   </div>
+   <pre id="promptResult" class="collapsed"></pre>
+  </div>
+  <div class="panel">
+   <h2 data-t="render">Генерация изображения</h2>
+   <div class="muted" data-t="renderHelp">Для одного утверждённого узла; количество вариантов не меняет число узлов.</div>
+   <div class="grid2">
+    <div><label data-t="mode">Режим</label><select id="renderMode"><option value="txt2img">По описанию</option><option value="img2img">По образцу</option></select></div>
+    <div><label data-t="variants">Вариантов</label><select id="variants"><option>1</option><option>2</option><option>3</option></select></div>
+    <div><label data-t="resolution">Размер</label><select id="resolution"><option value="768x960">768 × 960</option><option value="896x1120">896 × 1120</option></select></div>
+    <div><label>Seed (0 = random)</label><input id="seed" type="number" value="0" min="0"></div>
+    <div><label>Steps (10–60)</label><input id="steps" type="number" min="10" max="60" value="28"></div>
+    <div><label>CFG (1–12)</label><input id="cfg" type="number" min="1" max="12" step="0.5" value="6.5"></div>
+   </div>
+   <label data-t="strength">Сила img2img (0.15–0.90)</label><input id="strength" type="number" min=".15" max=".9" step=".05" value=".55">
+   <label data-t="reference">Изображение-образец (только для img2img)</label><select id="reference"><option value="">Без референса</option></select>
+   <div class="toolbar"><input id="referenceFile" type="file" accept=".jpg,.jpeg,.png,.webp" class="grow"><button id="uploadReference" data-t="upload">Добавить образец</button></div>
+   <label>SDXL LoRA</label><select id="lora"><option value="">Без LoRA</option></select>
+   <div class="toolbar" style="margin-top:10px"><button id="generate" class="primary" data-t="generate">Генерировать</button><button id="checkJob" data-t="checkJob">Проверить результат</button></div>
+   <pre id="jobInfo" class="collapsed"></pre><div id="previews"></div>
+  </div>
+  <div class="panel">
+   <h3 data-t="projectKnowledge">Знания проекта (текстовый RAG)</h3>
+   <div class="muted" data-t="knowledgeHelp">TXT/MD индексируются только для выбранного проекта; агент использует их вместе со связанными узлами.</div>
+   <div class="toolbar"><input id="kbFile" type="file" accept=".txt,.md" class="grow"><button id="kbUpload" data-t="upload">Добавить</button></div>
+  </div>
+ </section>
+</div>
+<div id="message"></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const LANGS=['ru','en','zh','de','hi','fr','fi','ko','ja','it','be'];
+const TR={
+ ru:{subtitle:'Универсальная локальная ИИ-студия · любой проект и граф',projects:'Проекты',newProject:'+ Новый проект',karateTemplate:'Шаблон Karate Linux',projectSettings:'Настройки проекта и общие промпты',projectName:'Название',projectBrief:'Что создаём? Описание, цели и ограничения',globalPositive:'Общий положительный промпт: стиль и правила всех рисунков',globalNegative:'Общий негативный промпт: чего не должно быть',systemPrompt:'Инструкция для LLM-агента: как соблюдать план и граф',llmSelection:'LLM для составления промптов',saveProject:'Сохранить проект',saveManual:'Сохраняется только по кнопке',graph:'Редактор графа',addNode:'+ Узел',dragHint:'Перетаскивай узлы мышью. Связывай их вручную; граф не ограничен 24 уроками.',connect:'Связать выбранный узел с:',addEdge:'Добавить связь',inspector:'Параметры выбранного узла',nodeName:'Название узла',nodeType:'Тип',nodeNotes:'Что должно происходить? Сюжет, требования, свойства',nodePrompt:'Промпт рисунка: что нарисовать на этом узле',nodeNegative:'Негативный промпт узла',nodeStatus:'Состояние',saveNode:'Сохранить узел',aiDraft:'ИИ: составить промпт',previewPrompt:'Итоговый промпт',deleteNode:'Удалить узел',expandSlides:'Импорт 5 слайдов',render:'Генерация изображения',renderHelp:'Один узел — одна сцена. Варианты не создают новые узлы.',mode:'Режим',variants:'Вариантов',resolution:'Размер',strength:'Сила img2img (0.15–0.90)',reference:'Изображение-образец для img2img',upload:'Добавить',generate:'Генерировать',checkJob:'Проверить результат',monitor:'Мониторинг Huananzhi (по нажатию)',update:'↻ Обновить показатели',statsInfo:'CPU · RAM · VRAM · SWAP · Zombie · реальные диски',llmManager:'Модели LLM — Ollama',installed:'Показать установленные',downloadLLM:'Скачать LLM',downloadStatus:'Статус загрузки',imageModels:'Графическая модель (отдельно от LLM)',scan:'Найти веса на дисках',downloadImage:'Скачать Illustrious XL',projectKnowledge:'Знания проекта (RAG)',knowledgeHelp:'TXT/MD только для выбранного проекта; агент учитывает связанные узлы.',freeVRAM:'Освободить VRAM',stopStudio:'ВЫКЛ студию'},
+ en:{subtitle:'Lightweight local AI studio · any project and editable graph',projects:'Projects',newProject:'+ New project',karateTemplate:'Karate Linux template',projectSettings:'Project settings and global prompts',projectName:'Name',projectBrief:'What are we creating? Brief, goals and constraints',globalPositive:'Global positive prompt: visual style and rules',globalNegative:'Global negative prompt: what to avoid',systemPrompt:'LLM instructions: follow the project and graph',llmSelection:'LLM for prompt planning',saveProject:'Save project',saveManual:'Changes are saved by button only',graph:'Graph editor',addNode:'+ Node',dragHint:'Drag nodes and connect them manually; no fixed 24-lesson limit.',connect:'Connect selected node to:',addEdge:'Add link',inspector:'Selected node',nodeName:'Node title',nodeType:'Type',nodeNotes:'Scene brief, goals and properties',nodePrompt:'Image prompt for this node',nodeNegative:'Node negative prompt',nodeStatus:'Status',saveNode:'Save node',aiDraft:'AI: draft image prompt',previewPrompt:'Final prompt',deleteNode:'Delete node',expandSlides:'Import 5 slides',render:'Image generation',renderHelp:'One node is one scene. Variants are not extra nodes.',mode:'Mode',variants:'Variants',resolution:'Resolution',strength:'img2img strength (0.15–0.90)',reference:'Image reference for img2img',upload:'Upload',generate:'Generate',checkJob:'Check result',monitor:'Huananzhi monitoring (on demand)',update:'↻ Update metrics',statsInfo:'CPU · RAM · VRAM · SWAP · zombies · physical disks',llmManager:'LLM models — Ollama',installed:'Installed models',downloadLLM:'Download LLM',downloadStatus:'Download status',imageModels:'Image model (separate from LLM)',scan:'Search disks for weights',downloadImage:'Download Illustrious XL',projectKnowledge:'Project knowledge (RAG)',knowledgeHelp:'TXT/MD indexed per project; graph context is included.',freeVRAM:'Release VRAM',stopStudio:'Stop studio'},
+ zh:{projects:'项目',newProject:'新建项目',graph:'图谱编辑器',inspector:'节点编辑',addNode:'添加节点',saveNode:'保存节点',generate:'生成图像',llmManager:'语言模型 Ollama',downloadLLM:'下载模型',projectSettings:'项目设置与提示词',globalPositive:'全局正向提示词',globalNegative:'全局反向提示词',systemPrompt:'LLM 系统指令',render:'图像生成'},
+ de:{projects:'Projekte',newProject:'Neues Projekt',graph:'Graph-Editor',inspector:'Knoten bearbeiten',addNode:'Knoten hinzufügen',saveNode:'Knoten speichern',generate:'Bild erzeugen',llmManager:'Sprachmodelle Ollama',downloadLLM:'LLM herunterladen',projectSettings:'Projekteinstellungen und Prompts',globalPositive:'Globaler positiver Prompt',globalNegative:'Globaler negativer Prompt',render:'Bilderzeugung'},
+ hi:{projects:'प्रोजेक्ट',newProject:'नया प्रोजेक्ट',graph:'ग्राफ संपादक',inspector:'नोड संपादक',addNode:'नया नोड',saveNode:'नोड सहेजें',generate:'चित्र बनाएँ',llmManager:'Ollama भाषा मॉडल',downloadLLM:'मॉडल डाउनलोड',projectSettings:'प्रोजेक्ट सेटिंग्स'},
+ fr:{projects:'Projets',newProject:'Nouveau projet',graph:'Éditeur de graphe',inspector:'Nœud sélectionné',addNode:'Ajouter un nœud',saveNode:'Enregistrer',generate:'Générer une image',llmManager:'Modèles Ollama',downloadLLM:'Télécharger LLM',projectSettings:'Paramètres et prompts',render:'Génération'},
+ fi:{projects:'Projektit',newProject:'Uusi projekti',graph:'Graafieditori',inspector:'Valittu solmu',addNode:'Lisää solmu',saveNode:'Tallenna solmu',generate:'Luo kuva',llmManager:'Ollama-kielimallit',downloadLLM:'Lataa LLM',projectSettings:'Projektiasetukset'},
+ ko:{projects:'프로젝트',newProject:'새 프로젝트',graph:'그래프 편집기',inspector:'노드 편집',addNode:'노드 추가',saveNode:'노드 저장',generate:'이미지 생성',llmManager:'Ollama 언어 모델',downloadLLM:'LLM 다운로드',projectSettings:'프로젝트 설정'},
+ ja:{projects:'プロジェクト',newProject:'新規プロジェクト',graph:'グラフ編集',inspector:'ノード編集',addNode:'ノード追加',saveNode:'保存',generate:'画像生成',llmManager:'Ollama 言語モデル',downloadLLM:'LLM ダウンロード',projectSettings:'プロジェクト設定'},
+ it:{projects:'Progetti',newProject:'Nuovo progetto',graph:'Editor del grafo',inspector:'Nodo selezionato',addNode:'Aggiungi nodo',saveNode:'Salva nodo',generate:'Genera immagine',llmManager:'Modelli Ollama',downloadLLM:'Scarica LLM',projectSettings:'Impostazioni progetto'},
+ be:{projects:'Праекты',newProject:'Новы праект',graph:'Рэдактар графа',inspector:'Рэдактар вузла',addNode:'Дадаць вузел',saveNode:'Захаваць вузел',generate:'Стварыць выяву',llmManager:'Мадэлі Ollama',downloadLLM:'Спампаваць LLM',projectSettings:'Налады праекта'}
+};
+let lang='ru', projects=[], project=null, nodes=[], edges=[], chosen=0, currentJob='';
+let busy=false;
+function say(s){$('message').textContent=String(s)}
+async function api(url,method='GET',data){
+ const options={method};
+ if(data instanceof FormData){options.body=data}
+ else if(data!==undefined){options.headers={'Content-Type':'application/json'};options.body=JSON.stringify(data)}
+ const response=await fetch(url,options);
+ const obj=await response.json();
+ if(!response.ok)throw Error(obj.error||response.statusText);
+ return obj;
+}
+async function task(fn){try{await fn()}catch(e){say('Ошибка / Error: '+e.message)}}
+function t(key){return (TR[lang]&&TR[lang][key])||TR.ru[key]||key}
+function translate(){
+ document.documentElement.lang=lang;
+ document.querySelectorAll('[data-t]').forEach(el=>el.textContent=t(el.dataset.t));
+}
+function opt(value,label){return new Option(label,String(value))}
+for(const code of LANGS){$('lang').add(opt(code,code.toUpperCase()))}
+$('lang').onchange=()=>{lang=$('lang').value;translate()};translate();
+function rowById(id){return nodes.find(n=>n.id===id)}
+function clearEdit(){
+ $('selectedNode').textContent='Выбери узел на графе или создай новый';
+ ['nodeTitle','nodeNotes','nodePrompt','nodeNegative'].forEach(id=>$(id).value='');
+ $('promptResult').classList.add('collapsed');$('expandLesson').classList.add('collapsed');
+}
+async function loadProjects(selected){
+ const result=await api('/api/studio/projects');projects=result.projects;
+ $('projectSelect').replaceChildren(...projects.map(p=>opt(p.id,p.name)));
+ if(!projects.length){project=null;nodes=[];edges=[];renderGraph();clearEdit();say('Создай первый проект. Karate Linux доступен как отдельный шаблон.');return}
+ const id=selected&&projects.some(p=>p.id===selected)?selected:projects[0].id;
+ $('projectSelect').value=String(id);await loadProject(id);
+}
+async function loadProject(id,keepSelection=false){
+ const data=await api('/api/studio/projects/'+id);
+ project=data.project;nodes=data.nodes;edges=data.edges;
+ ['projectName','projectBrief','basePrompt','globalNegative','systemPrompt'].forEach((key,i)=>{
+   const field=['name','description','base_prompt','negative_prompt','system_prompt'][i];
+   $(key).value=project[field]||'';
+ });
+ await refreshLLM(project.llm_model);
+ if(!keepSelection||!rowById(chosen))chosen=nodes.length?nodes[0].id:0;
+ renderGraph();editNode();
+}
+function renderGraph(){
+ const wrap=$('canvas'),svg=$('edges');
+ const maxx=Math.max(1000,...nodes.map(n=>n.x+215))+45;
+ const maxy=Math.max(590,...nodes.map(n=>n.y+110))+35;
+ wrap.style.width=maxx+'px';wrap.style.height=maxy+'px';
+ svg.setAttribute('width',maxx);svg.setAttribute('height',maxy);
+ svg.replaceChildren();
+ const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
+ const marker=document.createElementNS('http://www.w3.org/2000/svg','marker');
+ marker.setAttribute('id','arrow');marker.setAttribute('viewBox','0 0 10 10');
+ marker.setAttribute('refX','9');marker.setAttribute('refY','5');
+ marker.setAttribute('markerWidth','7');marker.setAttribute('markerHeight','7');
+ marker.setAttribute('orient','auto-start-reverse');
+ const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+ path.setAttribute('d','M 0 0 L 10 5 L 0 10 z');path.setAttribute('fill','#ee9138');
+ marker.append(path);defs.append(marker);svg.append(defs);
+ for(const edge of edges){
+   const source=rowById(edge.source),target=rowById(edge.target);
+   if(!source||!target)continue;
+   const x1=source.x+184,y1=source.y+41,x2=target.x,y2=target.y+41;
+   const line=document.createElementNS('http://www.w3.org/2000/svg','path');
+   const dx=Math.max(35,Math.abs(x2-x1)/2);
+   line.setAttribute('d','M '+x1+' '+y1+' C '+(x1+dx)+' '+y1+','+(x2-dx)+' '+y2+','+x2+' '+y2);
+   line.setAttribute('stroke','#d88b3b');line.setAttribute('stroke-width','2');
+   line.setAttribute('fill','none');line.setAttribute('marker-end','url(#arrow)');
+   svg.append(line);
+ }
+ wrap.querySelectorAll('.graph-node').forEach(el=>el.remove());
+ for(const node of nodes){
+   const el=document.createElement('button');el.className='graph-node'+(node.id===chosen?' selected':'')+(node.status==='approved'?' approved':'');
+   el.style.left=node.x+'px';el.style.top=node.y+'px';el.dataset.node=String(node.id);
+   const kind=document.createElement('span');kind.className='kind';kind.textContent=node.kind;
+   const name=document.createElement('span');name.className='name';name.textContent=node.title;
+   el.append(kind,name);installDrag(el,node);wrap.append(el);
+ }
+ $('connectTo').replaceChildren(...nodes.filter(n=>n.id!==chosen).map(n=>opt(n.id,n.title)));
+ $('links').replaceChildren();
+ for(const edge of edges){
+   const src=rowById(edge.source),dst=rowById(edge.target);
+   const b=document.createElement('button');
+   b.textContent=(src?.title||'?')+' → '+(dst?.title||'?')+' ×';
+   b.title='Удалить эту связь';
+   b.onclick=()=>task(async()=>{
+     await api('/api/studio/projects/'+project.id+'/edges/'+edge.id,'DELETE');
+     await loadProject(project.id,true);
+   });$('links').append(b);
+ }
+ $('notices').textContent=nodes.length+' nodes · '+edges.length+' links';
+}
+function installDrag(element,node){
+ let sx=0,sy=0,originX=0,originY=0,moved=false;
+ element.onpointerdown=e=>{
+   if(e.button!==0)return;
+   sx=e.clientX;sy=e.clientY;originX=node.x;originY=node.y;moved=false;
+   element.setPointerCapture(e.pointerId);
+ };
+ element.onpointermove=e=>{
+   if(!element.hasPointerCapture(e.pointerId))return;
+   const dx=e.clientX-sx,dy=e.clientY-sy;
+   if(Math.abs(dx)+Math.abs(dy)>4)moved=true;
+   if(moved){
+     node.x=Math.max(0,Math.round(originX+dx));node.y=Math.max(0,Math.round(originY+dy));
+     element.style.left=node.x+'px';element.style.top=node.y+'px';
+   }
+ };
+ element.onpointerup=e=>{
+   if(!element.hasPointerCapture(e.pointerId))return;
+   element.releasePointerCapture(e.pointerId);
+   if(moved){
+     task(async()=>{
+       await api('/api/studio/projects/'+project.id+'/nodes/'+node.id,'PATCH',{x:node.x,y:node.y});
+       renderGraph();
+     });
+   }else{
+     chosen=node.id;renderGraph();editNode();
+   }
+ };
+}
+function editNode(){
+ const n=rowById(chosen);
+ if(!n){clearEdit();return}
+ $('selectedNode').textContent='ID '+n.id+' · '+n.kind+' · '+project.name;
+ $('nodeTitle').value=n.title;$('nodeKind').value=n.kind;
+ $('nodeNotes').value=n.notes;$('nodePrompt').value=n.prompt;
+ $('nodeNegative').value=n.negative_prompt;$('nodeStatus').value=n.status;
+ $('expandLesson').classList.toggle('collapsed',!(project.kind==='karate'&&n.kind==='lesson'));
+ $('promptResult').classList.add('collapsed');
+}
+async function saveNode(){
+ const n=rowById(chosen);if(!n)throw Error('Выбери узел');
+ await api('/api/studio/projects/'+project.id+'/nodes/'+n.id,'PATCH',{
+  title:$('nodeTitle').value,kind:$('nodeKind').value,
+  notes:$('nodeNotes').value,prompt:$('nodePrompt').value,
+  negative_prompt:$('nodeNegative').value,status:$('nodeStatus').value
+ });
+ await loadProject(project.id,true);say('Узел сохранён');
+}
+async function refreshLLM(preferred){
+ const model=preferred||$('llmSelect').value;
+ let list=[];
+ try{let response=await api('/api/ollama/models');list=response.models.map(m=>m.name).filter(Boolean)}
+ catch(e){say('Ollama: '+e.message)}
+ if(model&&!list.includes(model))list.unshift(model);
+ $('llmSelect').replaceChildren(...list.map(n=>opt(n,n)));
+ if(model)$('llmSelect').value=model;
+ $('llmInfo').textContent=list.length?'Установлено '+list.length+' моделей: '+list.join(', ')+'. Новые загрузки Ollama могут попасть на системный диск.':'Ollama не отвечает; проверь службу.';
+}
+async function refreshResources(){
+ const r=await api('/api/references');
+ const old=$('reference').value;$('reference').replaceChildren(opt('','Без референса'),...r.references.map(x=>opt(x,x)));
+ if(r.references.includes(old))$('reference').value=old;
+ const l=await api('/api/loras');
+ const oldLora=$('lora').value;$('lora').replaceChildren(opt('','Без LoRA'),...l.loras.map(x=>opt(x,x)));
+ if(l.loras.includes(oldLora))$('lora').value=oldLora;
+}
+function fmt(m){if(m==null)return '—';return m>=1024?(m/1024).toFixed(1)+' GiB':Math.round(m)+' MiB'}
+function meter(name,value,pct,sub){
+ const box=document.createElement('div');box.className='metric';
+ let label=document.createElement('small');label.textContent=name;
+ let strong=document.createElement('strong');strong.textContent=value;
+ let detail=document.createElement('small');detail.textContent=sub||'';
+ let track=document.createElement('div');track.className='meter';
+ let fill=document.createElement('i');fill.style.width=Math.max(0,Math.min(100,Number(pct)||0))+'%';
+ track.append(fill);box.append(label,strong,detail,track);return box;
+}
+async function status(){
+ const s=await api('/api/status');const g=s.gpu?.devices?.[0];
+ $('gpu').textContent=g?'RTX 3060 · '+g.temperature_c+'°C':'GPU unavailable';
+ $('workerIndicator').classList.toggle('on',Boolean(s.engine_ready));
+ $('ollamaIndicator').classList.toggle('on',Boolean(s.ollama_online));
+ const c=s.cpu,r=s.ram,sw=s.swap,z=s.zombies;
+ $('systemMetrics').replaceChildren(
+  meter('CPU',c.percent+'%',c.percent,c.logical_threads+' threads'),
+  meter('RAM',r.percent+'%',r.percent,fmt(r.used_mib)+' / '+fmt(r.total_mib)),
+  meter('VRAM',g?g.vram_percent+'%':'—',g?.vram_percent,g?fmt(g.vram_used_mib)+' / '+fmt(g.vram_total_mib):''),
+  meter('SWAP',sw.percent+'%',sw.percent,fmt(sw.used_mib)+' / '+fmt(sw.total_mib)),
+  meter('ZOMBIE',String(z.count),null,'PID / PPID')
+ );
+ $('disks').replaceChildren(...s.disks.map(d=>meter(d.mount,d.percent+'%',d.percent,fmt(d.free_mib)+' свободно')));
+ $('zombies').textContent=z.count?z.examples.map(x=>x.pid+' ← '+x.ppid+' '+x.name).join(', '):'Зомби нет';
+}
+$('updateMetrics').onclick=()=>task(status);
+$('refreshStatus').onclick=()=>task(status);
+$('powerOff').onclick=()=>task(async()=>{
+ if(!confirm('Выключить только Flask-студию? Ollama и GPU-задания не трогать?'))return;
+ await api('/api/shutdown','POST',{});say('Студия завершает работу. Запуск: bash scripts/run.sh');
+});
+$('freeVram').onclick=()=>task(async()=>{const r=await api('/api/gpu/free','POST',{});say(JSON.stringify(r))});
+$('projectSelect').onchange=()=>task(()=>loadProject(Number($('projectSelect').value)));
+$('addProject').onclick=()=>task(async()=>{
+ const name=prompt('Название нового проекта','Мой проект');if(!name||!name.trim())return;
+ const r=await api('/api/studio/projects','POST',{name:name.trim(),template:'blank'});
+ await loadProjects(r.project_id);say('Новый универсальный проект создан');
+});
+$('karateTemplate').onclick=()=>task(async()=>{
+ if(!confirm('Импортировать Karate Linux как отдельный проект? Старые слайды в базе сохранятся.'))return;
+ const r=await api('/api/studio/projects','POST',{name:'Karate Linux',template:'karate'});
+ await loadProjects(r.project_id);say('Шаблон добавлен. Выбери главу и нажми Импорт 5 слайдов.');
+});
+$('saveProject').onclick=()=>task(async()=>{
+ if(!project)throw Error('Нет выбранного проекта');
+ await api('/api/studio/projects/'+project.id,'PATCH',{
+  name:$('projectName').value,description:$('projectBrief').value,
+  base_prompt:$('basePrompt').value,negative_prompt:$('globalNegative').value,
+  system_prompt:$('systemPrompt').value,llm_model:$('llmSelect').value
+ });
+ await loadProjects(project.id);say('Общие промпты и LLM сохранены');
+});
+$('addNode').onclick=()=>task(async()=>{
+ if(!project)throw Error('Сначала создай проект');
+ const title=prompt('Название узла','Новая сцена');
+ if(!title||!title.trim())return;
+ const id=await api('/api/studio/projects/'+project.id+'/nodes','POST',{title:title.trim(),kind:$('newKind').value,x:60+(nodes.length%5)*230,y:65+Math.floor(nodes.length/5)*125});
+ chosen=id.node_id;await loadProject(project.id,true);say('Узел создан, перенеси его мышью');
+});
+$('addEdge').onclick=()=>task(async()=>{
+ if(!project||!chosen)throw Error('Выбери исходный узел');
+ const target=Number($('connectTo').value);
+ if(!target)throw Error('Выбери целевой узел');
+ await api('/api/studio/projects/'+project.id+'/edges','POST',{source:chosen,target});
+ await loadProject(project.id,true);say('Связь добавлена');
+});
+$('saveNode').onclick=()=>task(saveNode);
+$('deleteNode').onclick=()=>task(async()=>{
+ if(!project||!chosen)return;
+ if(!confirm('Удалить выбранный узел и его связи?'))return;
+ await api('/api/studio/projects/'+project.id+'/nodes/'+chosen,'DELETE');
+ chosen=0;await loadProject(project.id);say('Узел удалён');
+});
+$('expandLesson').onclick=()=>task(async()=>{
+ const m=rowById(chosen)?.title.match(/^(\d{3})/);if(!m)throw Error('Это не глава Karate');
+ const r=await api('/api/studio/projects/'+project.id+'/lessons/'+Number(m[1])+'/expand','POST',{});
+ await loadProject(project.id,true);say('Импортировано '+r.created.length+' старых слайдов');
+});
+$('previewPrompt').onclick=()=>task(async()=>{
+ await saveNode();
+ const r=await api('/api/studio/projects/'+project.id+'/nodes/'+chosen+'/preview');
+ $('promptResult').classList.remove('collapsed');
+ $('promptResult').textContent='POSITIVE\n'+r.prompt+'\n\nNEGATIVE\n'+r.negative_prompt;
+});
+$('aiDraft').onclick=()=>task(async()=>{
+ if(!project||!chosen)throw Error('Выбери узел');
+ await saveNode();
+ say('Ollama составляет промпт по проекту и графу...');
+ const r=await api('/api/studio/projects/'+project.id+'/nodes/'+chosen+'/ai','POST',{});
+ await loadProject(project.id,true);
+ $('promptResult').classList.remove('collapsed');$('promptResult').textContent=r.explanation||'Промпт подготовлен как черновик.';
+ say('ИИ подготовил черновик. Проверь и утверди перед генерацией.');
+});
+$('refreshLLM').onclick=()=>task(async()=>{await refreshLLM();say('Список установленных LLM обновлён')});
+$('pullLLM').onclick=()=>task(async()=>{
+ const name=$('pullSelect').value;if(!name)return;
+ if(!confirm('Скачать '+name+' через Ollama? Хранилище Ollama может находиться на заполненном системном разделе.'))return;
+ const r=await api('/api/studio/llm/pull','POST',{model:name});say('Запрошена загрузка '+r.model);
+});
+$('llmStatus').onclick=()=>task(async()=>{
+ const r=await api('/api/studio/llm/status');
+ const progress=r.total?Math.round(100*r.completed/r.total)+'%':'—';
+ say('LLM '+r.model+': '+r.status+' · '+progress+' · '+r.message);
+ if(r.status==='completed')await refreshLLM(r.model);
+});
+$('scanModels').onclick=()=>task(async()=>{
+ $('modelInfo').classList.remove('collapsed');
+ $('modelInfo').textContent='Поиск...';
+ const r=await api('/api/models/scan','POST',{});
+ $('modelInfo').textContent=r.total_found+' файлов · '+r.directories_checked+' каталогов\n'+r.models.slice(0,30).map(m=>m.kind+' '+m.filename+' '+m.size_mib+'MiB').join('\n');
+});
+$('downloadImage').onclick=()=>task(async()=>{
+ if(!confirm('Скачать Illustrious XL 2.0 (~7 ГБ) на /1tbdisk?'))return;
+ const r=await api('/api/models/download/illustrious','POST',{});
+ $('modelInfo').textContent='Загрузка: '+r.status;
+});
+$('imageStatus').onclick=()=>task(async()=>{
+ const r=await api('/api/models/download/status');
+ $('modelInfo').textContent=JSON.stringify(r,null,2);
+});
+$('uploadReference').onclick=()=>task(async()=>{
+ const f=$('referenceFile').files[0];if(!f)throw Error('Выбери PNG/JPEG/WEBP');
+ const form=new FormData();form.append('file',f);
+ const r=await api('/api/references/upload','POST',form);
+ await refreshResources();$('reference').value=r.filename;$('renderMode').value='img2img';
+ say('Образец загружен');
+});
+$('generate').onclick=()=>task(async()=>{
+ if(!project||!chosen)throw Error('Выбери узел');
+ await saveNode();
+ const [width,height]=$('resolution').value.split('x').map(Number);
+ const result=await api('/api/studio/projects/'+project.id+'/nodes/'+chosen+'/generate','POST',{
+  mode:$('renderMode').value,variants:Number($('variants').value),
+  width,height,seed:Number($('seed').value),
+  steps:Number($('steps').value),cfg:Number($('cfg').value),
+  strength:Number($('strength').value),
+  reference:$('reference').value,lora:$('lora').value
+ });
+ currentJob=result.job_id;
+ $('jobInfo').classList.remove('collapsed');
+ $('jobInfo').textContent='Задание '+currentJob+' создано. Нажми Проверить результат.';
+ say('GPU worker запущен только для этого задания');
+});
+$('checkJob').onclick=()=>task(async()=>{
+ if(!currentJob)currentJob=rowById(chosen)?.last_job||'';
+ if(!currentJob)throw Error('Сначала запусти генерацию');
+ const r=await api('/api/jobs/'+encodeURIComponent(currentJob));
+ $('jobInfo').classList.remove('collapsed');
+ $('jobInfo').textContent='Задание '+r.status+' · '+r.completed+'/'+r.total+(r.error?'\n'+r.error:'');
+ $('previews').replaceChildren(...(r.outputs||[]).map(o=>{
+  const a=document.createElement('a');a.href=o.preview_url;a.target='_blank';a.rel='noopener';
+  const img=document.createElement('img');img.src=o.preview_url;img.loading='lazy';img.alt='Вариант '+o.variant;
+  a.append(img);return a;
+ }));
+});
+$('kbUpload').onclick=()=>task(async()=>{
+ if(!project)throw Error('Выбери проект');
+ const f=$('kbFile').files[0];if(!f)throw Error('Выбери TXT/MD файл');
+ const form=new FormData();form.append('file',f);
+ const r=await api('/api/studio/projects/'+project.id+'/knowledge','POST',form);
+ say('Добавлено '+r.chunks+' фрагментов знаний к этому проекту');
+});
+loadProjects().then(()=>refreshResources()).then(status).catch(e=>say(e.message));
+</script></body></html>

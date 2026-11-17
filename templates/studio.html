@@ -524,11 +524,35 @@ $('quickDraftAI').onclick=()=>task(async()=>{
  await api('/api/quick/draft/saved','PUT',{prompt:result.prompt,negative_prompt:result.negative_prompt||''});
  say('Промпт подготовлен и сохранён — проверь перед генерацией');
 });
-function renderWaiting(total){
- $('waitGrid').replaceChildren(...Array.from({length:Math.max(1,Math.min(3,total||1))},(_,i)=>{
+function renderWaiting(total,completed=0){
+ const amount=Math.max(1,Math.min(48,Number(total)||1)),visible=Math.min(3,amount);
+ const grid=$('waitGrid');
+ if(grid.querySelectorAll('.wait-slot').length!==visible){
+  grid.replaceChildren();
+  for(let i=0;i<visible;i++){
    const card=document.createElement('div');card.className='wait-slot';
-   card.textContent='Вариант '+(i+1)+' · ожидание';return card;
- }));
+   const turtle=document.createElement('span');turtle.className='wait-turtle';
+   turtle.textContent='🐢';turtle.setAttribute('aria-hidden','true');card.append(turtle);
+   const caption=document.createElement('span');caption.className='wait-caption';card.append(caption);
+   for(let j=0;j<6;j++){
+    const bubble=document.createElement('i');bubble.className='wait-bubble';
+    bubble.style.setProperty('--bubble-x',((j*19+i*11)%88+5)+'%');
+    bubble.style.setProperty('--bubble-size',(6+(j*5)%13)+'px');
+    bubble.style.setProperty('--bubble-speed',(2.6+(j%3)*.65)+'s');
+    bubble.style.setProperty('--bubble-delay',(-j*.58-i*.19)+'s');
+    bubble.setAttribute('aria-hidden','true');card.append(bubble);
+   }
+   grid.append(card);
+  }
+ }
+ [...grid.querySelectorAll('.wait-caption')].forEach((el,i)=>{
+  el.textContent='Вариант '+(i+1)+' / '+amount+(i<completed?' · готов':' · черепашка трудится');
+ });
+ let overflow=grid.querySelector('.wait-overflow');
+ if(amount>visible){
+  if(!overflow){overflow=document.createElement('div');overflow.className='wait-overflow';grid.append(overflow)}
+  overflow.textContent='Ещё '+(amount-visible)+' вариантов — последовательно на RTX 3060';
+ }else if(overflow){overflow.remove()}
 }
 function stopJobPolling(){if(jobTimer){clearTimeout(jobTimer);jobTimer=null}}
 function scheduleJobRefresh(){
@@ -548,7 +572,7 @@ async function updateJob(){
  if(busy){
    $('jobStage').textContent=(job.stage||'Загрузка модели')+' · '+(job.progress||0)+'%';
    $('jobBar').value=Number(job.progress||0);
-   renderWaiting(job.total);
+   renderWaiting(job.total,job.completed);
    scheduleJobRefresh();
  }else{stopJobPolling();await refreshJobHistory(false)}
  $('previews').replaceChildren(...(job.outputs||[]).map(o=>{

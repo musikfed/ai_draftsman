@@ -2,7 +2,10 @@
 import json
 import os
 import subprocess
+import threading
 import time
+import requests
+from studio.checkpoints import DEFAULT_CHECKPOINT, get_checkpoint
 import uuid
 from pathlib import Path
 
@@ -11,6 +14,42 @@ DATA = Path(os.environ.get("DRAFTSMAN_DATA", str(BASE / "data"))).resolve()
 JOBS = DATA / "jobs"
 WORKER_PY = BASE / "runtime/gpu-venv/bin/python"
 CHECKPOINT = BASE / "models/checkpoints/Illustrious-XL-v2.0.safetensors"
+JOB_START_LOCK = threading.Lock()
+
+
+def release_ollama_before_render():
+    """Best-effort release of Ollama GPU allocations; do not stop its service.
+
+    Graph/image requests work even when Ollama is offline. If a loaded model
+    refuses to unload, fail rather than render into occupied VRAM.
+    """
+    endpoint = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+    try:
+        res = requests.get(endpoint + "/api/ps", timeout=3)
+        res.raise_for_status()
+        entries = res.json().get("models", [])
+    except (requests.RequestException, ValueError):
+        return  # Ollama is offline: image generation remains independent.
+    for entry in entries:
+        name = entry.get("name") or entry.get("model")
+        if not name:
+            continue
+        try:
+            resp = requests.post(endpoint + "/api/generate", json={
+                "model": name, "prompt": "", "stream": False, "keep_alive": 0
+            }, timeout=20)
+            resp.raise_for_status()
+        except requests.RequestException as error:
+            raise RuntimeError(f"Cannot unload Ollama model {name}: {error}") from error
+    if entries:
+        try:
+            remaining = requests.get(endpoint + "/api/ps", timeout=3)
+            remaining.raise_for_status()
+            if remaining.json().get("models"):
+                raise RuntimeError("Ollama still holds models in memory. Release VRAM before rendering.")
+        except requests.RequestException:
+            pass  # Another service failure should not stop direct imaging.
+
 
 
 def read_json(path: Path, default=None):
@@ -77,36 +116,46 @@ def atomic_json(path: Path, data):
 
 
 def submit_job(spec: dict):
-    if current_job():
-        raise RuntimeError("GPU already busy. Wait for the existing job to finish.")
-    if not WORKER_PY.is_file():
-        raise FileNotFoundError("GPU environment absent; run bash scripts/install_gpu.sh")
-    if not CHECKPOINT.is_file():
-        raise FileNotFoundError("SDXL checkpoint absent; use explicit model download in the UI")
-    job_id = uuid.uuid4().hex
-    folder = JOBS / job_id
-    folder.mkdir(parents=True, exist_ok=False)
-    spec = dict(spec)
-    spec.update(job_id=job_id, output_dir=str(folder / "images"))
-    atomic_json(folder/"spec.json", spec)
-    atomic_json(folder/"state.json", {
-        "job_id": job_id, "status":"queued", "total":spec["variants"],
-        "completed":0, "created_at":time.time(), "outputs":[]
-    })
-    env=os.environ.copy()
-    env["DRAFTSMAN_DATA"] = str(DATA)
-    env["HF_HOME"] = str(DATA/"huggingface")
-    env["HF_HUB_CACHE"] = str(DATA/"huggingface"/"hub")
-    env["TORCH_HOME"] = str(DATA/"torch")
-    # Do not load Diffusers, torch or checkpoint inside the Flask process.
-    with (folder/"worker.log").open("ab") as output:
-        process=subprocess.Popen(
-            [str(WORKER_PY), "-m", "studio.worker", str(folder/"spec.json")],
-            cwd=str(BASE), env=env, stdin=subprocess.DEVNULL,
-            stdout=output, stderr=subprocess.STDOUT, start_new_session=True,
-            close_fds=True)
-    (folder/"worker.pid").write_text(str(process.pid))
-    return job_id
+    """One image model at a time; sequential variants, one short-lived worker."""
+    with JOB_START_LOCK:
+        if current_job():
+            raise RuntimeError("GPU already busy. Wait for the existing job to finish.")
+        if not WORKER_PY.is_file():
+            raise FileNotFoundError("GPU environment absent; run bash scripts/install_gpu.sh")
+        model_id = str(spec.get("checkpoint") or DEFAULT_CHECKPOINT)
+        try:
+            checkpoint, meta = get_checkpoint(model_id)
+        except ValueError as exc:
+            raise RuntimeError(str(exc)) from exc
+        if not checkpoint.is_file():
+            raise FileNotFoundError(
+                f"Model {meta['title']} is not installed. Download/select an SDXL checkpoint first.")
+        release_ollama_before_render()
+        job_id = uuid.uuid4().hex
+        folder = JOBS / job_id
+        folder.mkdir(parents=True, exist_ok=False)
+        spec = dict(spec)
+        spec.update(job_id=job_id, checkpoint=model_id,
+                    output_dir=str(folder / "images"))
+        atomic_json(folder/"spec.json", spec)
+        atomic_json(folder/"state.json", {
+            "job_id":job_id, "status":"queued", "stage":"Ожидание GPU",
+            "progress":0, "total":spec["variants"], "completed":0,
+            "created_at":time.time(), "outputs":[]
+        })
+        env=os.environ.copy()
+        env["DRAFTSMAN_DATA"] = str(DATA)
+        env["HF_HOME"] = str(DATA/"huggingface")
+        env["HF_HUB_CACHE"] = str(DATA/"huggingface"/"hub")
+        env["TORCH_HOME"] = str(DATA/"torch")
+        with (folder/"worker.log").open("ab") as output:
+            process=subprocess.Popen(
+                [str(WORKER_PY), "-m", "studio.worker", str(folder/"spec.json")],
+                cwd=str(BASE), env=env, stdin=subprocess.DEVNULL,
+                stdout=output, stderr=subprocess.STDOUT, start_new_session=True,
+                close_fds=True)
+        (folder/"worker.pid").write_text(str(process.pid))
+        return job_id
 
 
 def recent_jobs(limit: int = 20):
@@ -132,6 +181,7 @@ def recent_jobs(limit: int = 20):
             "project_id":spec.get("project_id"),
             "node_id":spec.get("node_id"),
             "source":spec.get("source", "graph"),
+            "checkpoint":spec.get("checkpoint",DEFAULT_CHECKPOINT),
             "prompt_preview":str(spec.get("prompt", ""))[:95],
             "outputs":len(status.get("outputs",[]))
         })

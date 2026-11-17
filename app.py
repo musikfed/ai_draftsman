@@ -5,7 +5,9 @@ from flask import Flask, jsonify, render_template, request, send_file
 import requests
 from studio.monitor import collect_snapshot
 from studio.models import CATALOG, scan_models
-from studio.jobs import submit_job, get_job, current_job, recent_jobs, CHECKPOINT, WORKER_PY
+from studio.jobs import submit_job, get_job, current_job, recent_jobs, WORKER_PY
+from studio.checkpoints import CHECKPOINTS, DEFAULT_CHECKPOINT, get_checkpoint, list_checkpoints
+from studio.parameters import choose_variants, MAX_VARIANTS
 
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.getenv("DRAFTSMAN_DATA", str(BASE / "data"))).resolve()
@@ -81,7 +83,7 @@ def home():
 def status():
     snapshot = collect_snapshot()
     snapshot.update({
-        "engine_ready": CHECKPOINT.is_file() and WORKER_PY.is_file(),
+        "engine_ready": WORKER_PY.is_file() and any(x["installed"] for x in list_checkpoints()),
         "engine_busy": current_job() is not None,
         "ollama_online": reach(OLLAMA_URL + "/api/tags"),
         "port": int(os.getenv("DRAFTSMAN_PORT", "9898")),
@@ -113,32 +115,50 @@ def model_download_status():
         return jsonify(dict(_download_state))
 
 
-@app.post("/api/models/download/illustrious")
-def model_download_illustrious():
-    """Explicit opt-in: official Hugging Face repository only; download to user project folder."""
+@app.get("/api/images/models")
+def image_models():
+    return jsonify(models=list_checkpoints(), default=DEFAULT_CHECKPOINT,
+                   note="SDXL image weights are NOT Ollama language models; downloads are explicit.")
+
+
+def start_checkpoint_download(model_id):
+    if model_id not in CHECKPOINTS:
+        return jsonify(error="Unsupported model. Only verified SDXL checkpoints are listed."), 400
     with _download_lock:
         if _download_state["status"] == "running":
-            return jsonify(error="Download is already running"), 409
-        _download_state.update(status="running", message="Downloading Illustrious XL 2.0...", path=None)
+            return jsonify(error="Another image checkpoint is downloading"), 409
+        _download_state.update(status="running", model=model_id,
+                               message="Downloading " + CHECKPOINTS[model_id]["title"], path=None)
     def worker():
         try:
             from huggingface_hub import hf_hub_download
-            directory = BASE / "models" / "checkpoints"
-            directory.mkdir(parents=True, exist_ok=True)
+            path, config = get_checkpoint(model_id)
+            path.parent.mkdir(parents=True, exist_ok=True)
             local_path = hf_hub_download(
-                repo_id="OnomaAIResearch/Illustrious-XL-v2.0",
-                filename="Illustrious-XL-v2.0.safetensors",
-                local_dir=directory,
-                cache_dir=str(DATA / "huggingface" / "hub")
+                repo_id=config["repo_id"], filename=config["filename"],
+                local_dir=path.parent, cache_dir=DATA/"huggingface"/"hub"
             )
             with _download_lock:
-                _download_state.update(status="completed", path=str(local_path),
-                                       message="Checkpoint downloaded. Independent Diffusers worker can now use it.")
+                _download_state.update(status="completed",model=model_id,
+                    message="SDXL checkpoint saved to disk. It will load only for a requested render.",
+                    path=str(local_path))
         except Exception as exc:
             with _download_lock:
-                _download_state.update(status="failed", message=str(exc)[:500])
-    threading.Thread(target=worker, daemon=True, name="hf-model-download").start()
-    return jsonify(status="running"), 202
+                _download_state.update(status="failed",model=model_id,message=str(exc)[:500])
+    threading.Thread(target=worker, daemon=True, name="hf-image-download").start()
+    return jsonify(status="running", model=model_id), 202
+
+
+@app.post("/api/images/models/download")
+def download_image_model():
+    payload=request.get_json(silent=True) or {}
+    return start_checkpoint_download(str(payload.get("model","")))
+
+
+@app.post("/api/models/download/illustrious")
+def model_download_illustrious():
+    """Backward compatibility for previous studio versions."""
+    return start_checkpoint_download(DEFAULT_CHECKPOINT)
 
 
 @app.post("/api/gpu/free")
@@ -229,6 +249,8 @@ def rag_import():
 
 @app.post("/api/ollama/plan")
 def ollama_plan():
+    if current_job():
+        return jsonify(error="GPU render running; Ollama planning deferred to avoid VRAM conflicts"),409
     p=request.get_json(silent=True) or {}
     lesson=p.get("lesson")
     if type(lesson) is not int or not 1<=lesson<=24:
@@ -396,7 +418,7 @@ def quick_generate():
     if mode not in ("txt2img", "img2img"):
         return jsonify(error="Choose text-to-image or image-to-image"), 400
     try:
-        variants = int(data.get("variants", 1))
+        variants = choose_variants(data.get("variants", "auto"), prompt)
         steps = int(data.get("steps", 28))
         seed = int(data.get("seed", 0))
         cfg = float(data.get("cfg", 6.5))
@@ -405,7 +427,7 @@ def quick_generate():
         height = int(data.get("height", 960))
     except (TypeError, ValueError, OverflowError):
         return jsonify(error="Invalid numeric parameter"), 400
-    if not (1 <= variants <= 3 and 10 <= steps <= 60 and
+    if not (1 <= variants <= MAX_VARIANTS and 10 <= steps <= 60 and
             1 <= cfg <= 12 and 0.15 <= strength <= 0.9 and
             0 <= seed < 2**32 and
             (width, height) in ((768, 960), (896, 1120))):
@@ -427,8 +449,12 @@ def quick_generate():
                  or not (BASE / "models" / "loras" / lora).is_file()):
         return jsonify(error="Selected SDXL LoRA not found"), 400
 
+    model_id = str(data.get("checkpoint") or DEFAULT_CHECKPOINT)
+    if model_id not in CHECKPOINTS:
+        return jsonify(error="Unsupported SDXL image checkpoint"), 400
     spec = {
         "lesson": 0, "slide": 0, "source": "quick",
+        "checkpoint": model_id,
         "prompt": prompt, "negative_prompt": negative_prompt,
         "mode": mode, "variants": variants, "steps": steps,
         "cfg": cfg, "strength": strength, "seed": seed,
@@ -446,6 +472,8 @@ def quick_generate():
 @app.post("/api/quick/draft")
 def quick_draft():
     """Optional LLM assistance for prompt wording; does not start GPU or mutate projects."""
+    if current_job():
+        return jsonify(error="GPU renders are active. Wait before calling Ollama to avoid VRAM competition."),409
     data = request.get_json(silent=True) or {}
     idea = str(data.get("idea") or "").strip()[:6000]
     if not idea:
@@ -489,7 +517,7 @@ def job_status(job_id):
 
 @app.get("/api/jobs/<job_id>/images/<int:variant>")
 def job_image(job_id,variant):
-    if not 1<=variant<=3:return jsonify(error="Invalid variant"),404
+    if not 1<=variant<=MAX_VARIANTS:return jsonify(error="Invalid variant"),404
     job=get_job(job_id)
     if job is None:return jsonify(error="Job not found"),404
     for item in job.get("outputs",[]):

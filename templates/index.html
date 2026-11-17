@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PEGINELAB AI Draftsman</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1120;--panel:#141f31;--edge:#304258;--accent:#ff973b;--green:#62d09c;--text:#eaf1f9;--muted:#aab8c8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,sans-serif}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;border-bottom:1px solid var(--edge);flex-wrap:wrap}
+header strong{font-size:19px}header small{display:block;color:var(--muted)}main{max-width:1450px;margin:auto;padding:18px;display:grid;grid-template-columns:1.1fr 1fr;gap:16px}
+.panel{background:var(--panel);border:1px solid var(--edge);border-radius:12px;padding:16px;min-width:0}
+h2{font-size:17px;margin:0 0 12px}h3{font-size:15px;margin:16px 0 8px}
+button,select,input,textarea{font:inherit;color:var(--text)}button{cursor:pointer;background:#263954;border:1px solid #3a506d;border-radius:7px;padding:8px 12px}
+button:hover{border-color:var(--accent)}button.primary{background:#a84d13;border-color:#ff973b}
+button.danger{background:#5a2730;border-color:#98515b}button:disabled{opacity:.5;cursor:not-allowed}
+select,input,textarea{width:100%;background:#0c1626;border:1px solid var(--edge);border-radius:7px;padding:8px}
+textarea{min-height:102px;resize:vertical}.toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.toolbar select{width:auto}.stat{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--edge);border-radius:20px;padding:4px 10px;color:var(--muted);font-size:12px}
+.dot{width:8px;height:8px;border-radius:50%;background:#777}.on .dot{background:var(--green)}
+#graph{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;max-height:340px;overflow:auto;padding:6px}
+.node{position:relative;min-height:62px;text-align:left;font-weight:650}
+.node:not(:nth-child(6n)):after{content:"→";position:absolute;right:-12px;top:20px;color:var(--accent)}
+.node.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.node small{display:block;color:var(--muted);font-weight:400;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#slides{display:flex;gap:8px;margin:10px 0}.slide{flex:1;min-width:0}.slide.active{border-color:var(--accent)}
+label{display:block;margin:10px 0 5px;font-size:13px;color:var(--muted)}
+pre{white-space:pre-wrap;word-break:break-word;max-height:180px;overflow:auto;background:#0b1423;padding:10px;border-radius:8px;color:#b9e9de}
+#message{white-space:pre-wrap;min-height:28px;font-size:13px;color:var(--green)}
+.muted{color:var(--muted);font-size:12px}.full{grid-column:1/-1}
+@media(max-width:850px){main{grid-template-columns:1fr}#graph{grid-template-columns:repeat(4,minmax(0,1fr))}.node:after{display:none}}
+</style></head><body>
+<header><div><strong>PEGINELAB <span style="color:var(--accent)">AI Draftsman</span></strong><small id="subtitle">Локальная студия Karate Linux · 24 урока × 5 свайпов</small></div>
+<div class="toolbar"><select id="lang" aria-label="Language"></select><span class="stat" id="gpu">GPU —</span><span class="stat" id="statusComfy"><span class="dot"></span>GPU engine</span><span class="stat" id="statusOllama"><span class="dot"></span>Ollama</span>
+<button id="refresh">↻</button></div></header>
+<main>
+<section class="panel"><h2 data-i="graph">Сюжетный граф</h2><div class="muted" data-i="graphHint">Нажми урок: пять свайпов связаны в одну историю.</div><div id="graph"></div>
+<h3><span data-i="lesson">Урок</span> <span id="lessonName"></span></h3><div id="slides"></div><div class="muted" id="canon"></div>
+<div class="toolbar" style="margin-top:12px"><button id="planAI" class="primary" data-i="draftFive">ИИ: набросать 5 свайпов</button><span class="muted" data-i="draftHint">План сохраняется как черновик, без генерации.</span></div>
+<h3 data-i="rag">RAG: база знаний</h3><div class="toolbar"><input id="search" style="flex:1" placeholder="PostgreSQL WAL"><button id="searchBtn" data-i="find">Найти</button></div><pre id="ragResult"></pre>
+<label data-i="canonUpload">Добавить канон в RAG (.txt / .md)</label><input id="ragFile" type="file" accept=".txt,.md">
+</section>
+<section class="panel"><h2 data-i="editor">Редактор свайпа</h2><div class="muted" id="selected"></div>
+<label data-i="story">Сценарий и диалоги</label><textarea id="story" placeholder="Описание кадров и точные русские реплики"></textarea>
+<label data-i="prompt">Описание рисунка (без текста в облачках)</label><textarea id="prompt" style="min-height:160px"></textarea>
+<label data-i="approval">Статус</label><select id="approval"><option value="planned">planned</option><option value="draft">draft</option><option value="approved">approved</option></select>
+<div class="toolbar" style="margin-top:12px"><button id="save" class="primary" data-i="save">Сохранить</button><button id="generate" data-i="generate">Генерировать кадр</button></div>
+<h3 data-i="engine">GPU-движок — ручное питание</h3><p class="muted" data-i="engineHint">Панель доступна постоянно, генератор спит. ВКЛ загружает ComfyUI, ВЫКЛ завершает только его процесс, не затрагивая Ollama.</p>
+<div class="toolbar"><button id="powerOn" class="primary" data-i="powerOn">ВКЛ</button><button id="powerOff" class="danger" data-i="powerOff">ВЫКЛ</button><button id="logs" data-i="logs">Журнал</button></div>
+<pre id="engineLog" style="display:none"></pre><div id="message"></div>
+<div class="muted" data-i="readyNote">Для реальной генерации нужно установить ComfyUI и экспортировать API workflow модели с меткой {{PROMPT}}.</div>
+</section>
+</main>
+<script>
+const locales={
+ru:['Сюжетный граф','Нажми урок: пять свайпов связаны в одну историю.','Урок','ИИ: набросать 5 свайпов','План сохраняется как черновик, без генерации.','RAG: база знаний','Найти','Добавить канон в RAG (.txt / .md)','Редактор свайпа','Сценарий и диалоги','Описание рисунка (без текста в облачках)','Статус','Сохранить','Генерировать кадр','GPU-движок — ручное питание','Панель работает постоянно; генератор запускается только вручную.','ВКЛ','ВЫКЛ','Журнал','Для генерации нужен ComfyUI и API workflow с {{PROMPT}}.'],
+en:['Story graph','Select an episode: five connected slides.','Lesson','AI: draft 5 slides','Draft only; no image generation.','RAG knowledge base','Search','Import canon (.txt / .md)','Slide editor','Story and dialogue','Art prompt (empty speech bubbles)','Status','Save','Generate image','GPU engine — manual control','The dashboard stays active; image engine starts only on demand.','ON','OFF','Logs','ComfyUI and API workflow with {{PROMPT}} required.'],
+zh:['故事关系图','选择课程：五张连续画面。','课程','AI：生成五张草稿','只保存草稿，不生成图像。','RAG 知识库','搜索','导入设定 (.txt/.md)','画面编辑器','故事和对话','绘图提示（空白对话框）','状态','保存','生成图像','GPU 引擎—手动控制','控制台常开，图像引擎按需启动。','开启','关闭','日志','需要 ComfyUI 和带 {{PROMPT}} 的工作流。'],
+de:['Handlungsgraph','Lektion auswählen: fünf verbundene Bilder.','Lektion','KI: 5 Entwürfe','Nur Entwurf, keine Bilderzeugung.','RAG-Wissensbasis','Suchen','Kanon importieren (.txt/.md)','Bildeditor','Geschichte und Dialog','Bildprompt (leere Sprechblasen)','Status','Speichern','Bild erzeugen','GPU-Engine — manuell','Die Oberfläche bleibt aktiv; die Engine startet bei Bedarf.','EIN','AUS','Protokoll','ComfyUI und Workflow mit {{PROMPT}} erforderlich.'],
+hi:['कहानी ग्राफ','पाठ चुनें: पाँच जुड़े चित्र।','पाठ','AI: 5 ड्राफ्ट','केवल ड्राफ्ट, चित्र नहीं।','RAG ज्ञान आधार','खोजें','कैनन आयात करें (.txt/.md)','चित्र संपादक','कहानी और संवाद','चित्र निर्देश (खाली संवाद)','स्थिति','सहेजें','चित्र बनाएँ','GPU इंजन — मैनुअल','डैशबोर्ड चालू रहता है; इंजन ज़रूरत पर चालू करें।','चालू','बंद','लॉग','ComfyUI और {{PROMPT}} वर्कफ़्लो चाहिए।'],
+fr:['Graphe narratif','Choisir une leçon : cinq images liées.','Leçon','IA : 5 brouillons','Brouillon uniquement, pas de génération.','Base RAG','Chercher','Importer le canon (.txt/.md)','Éditeur de page','Histoire et dialogues','Description visuelle (bulles vides)','Statut','Enregistrer','Générer une image','Moteur GPU — manuel','Le tableau reste actif, le moteur démarre à la demande.','ON','OFF','Journaux','ComfyUI et workflow avec {{PROMPT}} requis.'],
+fi:['Tarinagraafi','Valitse oppitunti: viisi jatkosivua.','Oppitunti','Tekoäly: 5 luonnosta','Vain luonnos, ei kuvia.','RAG-tietokanta','Hae','Tuo kaanon (.txt/.md)','Sivueditori','Tarina ja dialogi','Kuvakehote (tyhjät puhekuplat)','Tila','Tallenna','Luo kuva','GPU-moottori — käsiohjaus','Paneeli pysyy päällä; moottori käynnistyy tarvittaessa.','PÄÄLLE','POIS','Lokit','Tarvitaan ComfyUI ja {{PROMPT}}-työnkulku.'],
+ko:['스토리 그래프','수업 선택: 이어지는 다섯 장면.','수업','AI: 5장 초안','초안만 저장, 이미지 생성 안 함.','RAG 지식베이스','검색','설정 가져오기 (.txt/.md)','장면 편집기','스토리와 대사','이미지 프롬프트 (빈 말풍선)','상태','저장','이미지 생성','GPU 엔진 — 수동 제어','대시보드는 유지, 엔진만 필요할 때 실행.','켜기','끄기','로그','ComfyUI 및 {{PROMPT}} 워크플로 필요.'],
+ja:['ストーリーグラフ','レッスンを選択：連続する5ページ。','レッスン','AI：5ページの下書き','下書きのみ、画像生成なし。','RAG知識ベース','検索','設定を読み込む (.txt/.md)','ページ編集','ストーリーと台詞','画像プロンプト（吹き出しは空欄）','状態','保存','画像生成','GPUエンジン — 手動','画面は常時使用可能。エンジンは必要時に起動。','オン','オフ','ログ','ComfyUI と {{PROMPT}} ワークフローが必要。'],
+it:['Grafo narrativo','Seleziona lezione: cinque immagini collegate.','Lezione','IA: 5 bozze','Solo bozza, senza generazione.','Base RAG','Cerca','Importa canone (.txt/.md)','Editor diapositiva','Storia e dialoghi','Prompt immagine (fumetti vuoti)','Stato','Salva','Genera immagine','Motore GPU — manuale','Il pannello rimane attivo; avvio motore solo su richiesta.','ON','OFF','Log','Servono ComfyUI e workflow con {{PROMPT}}.'],
+be:['Граф сюжэту','Абяры ўрок: пяць звязаных слайдаў.','Урок','ШІ: 5 чарнавікоў','Толькі чарнавік, без генерацыі.','База ведаў RAG','Шукаць','Імпарт канону (.txt/.md)','Рэдактар слайда','Сюжэт і дыялогі','Апісанне малюнка (пустыя воблачкі)','Статус','Захаваць','Стварыць выяву','GPU-рухавік — ручны','Панэль працуе, генератар запускаецца па патрэбе.','УКЛ','ВЫКЛ','Журнал','Патрэбны ComfyUI і workflow з {{PROMPT}}.']
+};
+const ids=['graph','graphHint','lesson','draftFive','draftHint','rag','find','canonUpload','editor','story','prompt','approval','save','generate','engine','engineHint','powerOn','powerOff','logs','readyNote'];
+const $=id=>document.getElementById(id);let lessons=[],slides=[],lesson=13,slide=1;
+function message(s){$('message').textContent=s}
+function translate(v){document.documentElement.lang=v;document.querySelectorAll('[data-i]').forEach(e=>{let index=ids.indexOf(e.dataset.i);if(index>=0)e.textContent=(locales[v]||locales.ru)[index]});}
+for(let l of Object.keys(locales)){let o=document.createElement('option');o.value=l;o.textContent=l.toUpperCase();$('lang').append(o)}$('lang').value='ru';$('lang').onchange=e=>translate(e.target.value);translate('ru');
+async function api(url,method='GET',body){let opts={method};if(body instanceof FormData){opts.body=body}else if(body!==undefined){opts.headers={'Content-Type':'application/json'};opts.body=JSON.stringify(body)}let r=await fetch(url,opts);let j=await r.json();if(!r.ok)throw Error(j.error||r.statusText);return j}
+function active(){return slides.find(s=>s.lesson===lesson&&s.slide===slide)}
+function render(){let e=lessons[lesson-1];if(!e)return;$('lessonName').textContent=String(lesson).padStart(3,'0')+' — '+e.title;$('canon').textContent=e.story;
+$('graph').replaceChildren(...lessons.map(x=>{let b=document.createElement('button');b.className='node'+(x.id===lesson?' active':'');b.innerHTML='<span>'+String(x.id).padStart(3,'0')+'</span><small></small>';b.querySelector('small').textContent=x.title;b.onclick=()=>{lesson=x.id;slide=1;render()};return b}));
+$('slides').replaceChildren(...[1,2,3,4,5].map(n=>{let b=document.createElement('button');b.className='slide'+(n===slide?' active':'');b.textContent=String(n).padStart(2,'0');b.onclick=()=>{slide=n;render()};return b}));
+let s=active();$('selected').textContent=''+lesson.toString().padStart(3,'0')+'_'+slide.toString().padStart(2,'0')+'.png';$('story').value=s?.story||'';$('prompt').value=s?.prompt||'';$('approval').value=s?.status||'planned';}
+async function load(){let p=await api('/api/plan');lessons=p.lessons;slides=p.slides;render()}
+async function check(){let s=await api('/api/status');$('statusComfy').classList.toggle('on',s.comfy_running);$('statusOllama').classList.toggle('on',s.ollama_online);$('gpu').textContent='GPU '+s.gpu;message('ComfyUI: '+(s.comfy_running?'ON':'OFF')+' | Ollama: '+(s.ollama_online?'ON':'OFF'))}
+async function run(fn){try{await fn()}catch(e){message('Ошибка: '+e.message)}}
+$('refresh').onclick=()=>run(check);
+$('save').onclick=()=>run(async()=>{await api('/api/slides/'+lesson+'/'+slide,'POST',{story:$('story').value,prompt:$('prompt').value,status:$('approval').value});await load();message('Слайд сохранён')});
+$('powerOn').onclick=()=>run(async()=>{let s=await api('/api/engine/start','POST',{});message('Запуск ComfyUI PID '+s.pid+'; проверь состояние вручную')});
+$('powerOff').onclick=()=>run(async()=>{await api('/api/engine/stop','POST',{});await check()});
+$('planAI').onclick=()=>run(async()=>{message('Ollama готовит пять последовательных свайпов...');let s=await api('/api/ollama/plan','POST',{lesson});await load();message('Сохранены '+s.saved+' черновиков. Проверь и утверди каждый.')});
+$('generate').onclick=()=>run(async()=>{let s=await api('/api/engine/generate','POST',{lesson,slide});message('ComfyUI принял задание: '+s.prompt_id)});
+$('logs').onclick=()=>run(async()=>{let r=await api('/api/engine/log');$('engineLog').style.display='block';$('engineLog').textContent=r.lines.join('\n')});
+$('searchBtn').onclick=()=>run(async()=>{let r=await api('/api/rag/search?q='+encodeURIComponent($('search').value));$('ragResult').textContent=r.results.map(x=>x.source+': '+x.chunk).join('\n\n')||'Нет результатов'});
+$('ragFile').onchange=()=>run(async()=>{let f=$('ragFile').files[0];if(!f)return;let form=new FormData();form.append('file',f);let r=await api('/api/rag/import','POST',form);message('RAG: загружено '+r.imported+' фрагментов')});
+load().then(check).catch(e=>message(e.message));
+</script></body></html>

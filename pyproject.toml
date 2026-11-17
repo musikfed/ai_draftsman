@@ -1,7 +1,7 @@
 [project]
 name = "peginelab-ai-draftsman"
 version = "0.1.0"
-description = "Local-first AI comic studio with controllable GPU engine"
+description = "Universal local-first visual AI studio with editable graphs and on-demand GPU"
 requires-python = ">=3.12"
 dependencies = ["flask>=3.1,<4", "pillow>=11,<13", "requests>=2.32,<3", "psutil>=6,<8", "huggingface_hub>=0.35,<2"]
 

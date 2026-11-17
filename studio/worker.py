@@ -40,6 +40,11 @@ def generate(spec: dict, state_path: Path) -> None:
     cls = StableDiffusionXLImg2ImgPipeline if mode == "img2img" else StableDiffusionXLPipeline
     # The official SDXL pipeline configuration can be cached from Hugging Face
     # on first use. All caches live on the 1TB data disk.
+    state = {"status": "running", "stage": "Загрузка графической модели",
+             "progress": 0, "job_id": spec["job_id"],
+             "started_at": time.time(), "completed": 0,
+             "total": int(spec["variants"]), "outputs": []}
+    write_state(state_path, state)
     pipe = cls.from_single_file(
         str(checkpoint),
         config="stabilityai/stable-diffusion-xl-base-1.0",
@@ -68,9 +73,8 @@ def generate(spec: dict, state_path: Path) -> None:
         init_image = ImageOps.fit(Image.open(image).convert("RGB"),
                                   (int(spec["width"]), int(spec["height"])),
                                   Image.Resampling.LANCZOS)
-    state = {"status": "running", "job_id": spec["job_id"],
-             "started_at": time.time(), "completed": 0, "total": spec["variants"],
-             "outputs": []}
+    state["stage"] = "Модель загружена · подготовка генерации"
+    state["progress"] = 2
     write_state(state_path, state)
     target = Path(spec["output_dir"]).resolve()
     target.mkdir(parents=True, exist_ok=True)
@@ -84,10 +88,24 @@ def generate(spec: dict, state_path: Path) -> None:
             "num_inference_steps": int(spec["steps"]),
             "generator": torch.Generator(device="cpu").manual_seed(seed),
         }
+        expected_steps = max(1, int(int(spec["steps"]) *
+                                     (float(spec["strength"]) if mode == "img2img" else 1)))
+        def on_step_end(pipeline, step, timestep, callback_kwargs):
+            # Very small atomic JSON update; renderer's CUDA state stays in its worker.
+            fraction = min(0.98, (index + min(1., (step + 1) / expected_steps))
+                           / int(spec["variants"]))
+            state["stage"] = f"Рендер: вариант {index + 1}/{spec['variants']}, шаг {step + 1}"
+            state["progress"] = min(99, max(2, int(fraction * 100)))
+            write_state(state_path, state)
+            return callback_kwargs
+
+        common["callback_on_step_end"] = on_step_end
         if mode == "img2img":
             result = pipe(image=init_image, strength=float(spec["strength"]), **common)
         else:
             result = pipe(width=int(spec["width"]), height=int(spec["height"]), **common)
+        state["stage"] = f"Сохранение варианта {index + 1}"
+        write_state(state_path, state)
         image = result.images[0].convert("RGB")
         prefix = f'{int(spec["lesson"]):03d}_{int(spec["slide"]):02d}_v{index+1:02d}'
         master = target / (prefix + "_master.png")
@@ -106,9 +124,12 @@ def generate(spec: dict, state_path: Path) -> None:
         state["outputs"].append({"variant": index+1, "seed": seed,
                                  "png8": str(final), "master": str(master)})
         state["completed"] = index+1
+        state["progress"] = min(99, int(100*(index+1)/int(spec["variants"])))
         write_state(state_path, state)
 
     state["status"] = "completed"
+    state["progress"] = 100
+    state["stage"] = "Готово"
     state["finished_at"] = time.time()
     write_state(state_path, state)
     # Worker exits immediately after return, releasing all CUDA allocations.
@@ -135,7 +156,7 @@ def main():
             previous = json.loads(state_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             pass
-        previous.update(status="failed", error=f"{type(exc).__name__}: {exc}",
+        previous.update(status="failed",stage="Ошибка генерации", error=f"{type(exc).__name__}: {exc}",
                         traceback=traceback.format_exc()[-4000:],
                         finished_at=time.time())
         write_state(state_path, previous)

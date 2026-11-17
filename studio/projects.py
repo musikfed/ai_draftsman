@@ -161,10 +161,28 @@ def register(app, db_path: Path, data_dir: Path, ollama_url: str, default_model:
         if not name or template not in ("blank", "karate"):
             return jsonify(error="Invalid project name/template"), 400
         description = str(payload.get("description", ""))[:5000]
+        style = ""
+        system = ""
+        negative = ""
+        if template == "karate":
+            description = description or ("Educational comedy manga series, 24 lessons about Linux, "
+                                          "Docker and PostgreSQL; five sequential slides per lesson.")
+            style = ("Dynamic colorful manga comic, crisp ink outlines, blue and orange lighting, "
+                     "winter Moscow, Grep Paip: clean-shaven young engineer with PL cap and orange "
+                     "glasses wearing current belt; ROOT: actual penguin sensei in dark kimono; "
+                     "PostgreSQL elephant blue with large ears; clear panel composition.")
+            negative = "beard, moustache, ROOT as human, wrong karate belt, illegible text, watermark"
+            system = ("Follow the confirmed Karate Linux continuity and linked graph scenes. "
+                      "Grep has green belt in lessons 013–015. ROOT is a real penguin. "
+                      "Five sequential slides are not five variants. "
+                      "Keep Russian dialogue outside image prompts for later lettering. "
+                      "Never recommend deleting PostgreSQL pg_wal manually.")
         with db() as c:
             cur = c.execute(
-                "INSERT INTO studio_projects(name,description,kind,llm_model) VALUES(?,?,?,?)",
-                (name, description, "karate" if template == "karate" else "general", default_model)
+                "INSERT INTO studio_projects(name,description,kind,llm_model,"
+                "base_prompt,negative_prompt,system_prompt) VALUES(?,?,?,?,?,?,?)",
+                (name, description, "karate" if template == "karate" else "general",
+                 default_model, style, negative, system)
             )
             pid = cur.lastrowid
             if template == "karate":
@@ -183,6 +201,17 @@ def register(app, db_path: Path, data_dir: Path, ollama_url: str, default_model:
                         (pid, src, target)
                     )
         return jsonify(project_id=pid), 201
+
+    @app.delete("/api/studio/projects/<int:project_id>")
+    def studio_delete_project(project_id):
+        """Explicit delete of one project; legacy comic tables remain untouched."""
+        with db() as c:
+            if not fetch_project(c, project_id):
+                return jsonify(error="Project not found"), 404
+            c.execute("DELETE FROM studio_knowledge WHERE project_id=?", (str(project_id),))
+            c.execute("DELETE FROM studio_projects WHERE id=?", (project_id,))
+        return jsonify(deleted=True)
+
 
     @app.get("/api/studio/projects/<int:project_id>")
     def studio_read_project(project_id):

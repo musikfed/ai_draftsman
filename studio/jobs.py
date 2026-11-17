@@ -107,3 +107,34 @@ def submit_job(spec: dict):
             close_fds=True)
     (folder/"worker.pid").write_text(str(process.pid))
     return job_id
+
+
+def recent_jobs(limit: int = 20):
+    """Read persisted job manifests without loading CUDA or depending on browser state."""
+    if not JOBS.is_dir():
+        return []
+    result = []
+    folders = sorted((p for p in JOBS.iterdir() if p.is_dir()),
+                     key=lambda p: p.stat().st_mtime, reverse=True)[:min(200, limit*3)]
+    for folder in folders:
+        status = get_job(folder.name)
+        if status is None:
+            continue
+        spec = read_json(folder / "spec.json")
+        result.append({
+            "job_id":folder.name,
+            "status":status.get("status", "unknown"),
+            "stage":status.get("stage", ""),
+            "progress":status.get("progress", 0),
+            "completed":status.get("completed", 0),
+            "total":status.get("total", 0),
+            "created_at":status.get("created_at"),
+            "project_id":spec.get("project_id"),
+            "node_id":spec.get("node_id"),
+            "source":spec.get("source", "graph"),
+            "prompt_preview":str(spec.get("prompt", ""))[:95],
+            "outputs":len(status.get("outputs",[]))
+        })
+        if len(result)>=limit:
+            break
+    return result

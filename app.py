@@ -1,8 +1,10 @@
-"""PEGINELAB AI Draftsman: Flask LAN studio and opt-in GPU process."""
-import json, os, re, signal, sqlite3, subprocess, threading, time, uuid
+"""PEGINELAB AI Draftsman: local comic studio, command-line lifecycle."""
+import json, os, re, signal, sqlite3, threading, uuid
 from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 import requests
+from studio.monitor import collect_snapshot
+from studio.models import CATALOG, scan_models
 
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.getenv("DRAFTSMAN_DATA", str(BASE / "data"))).resolve()
@@ -14,56 +16,7 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:8b")
 CANON = json.loads((BASE / "canon" / "karate_linux.json").read_text(encoding="utf-8"))
 DB = DATA / "draftsman.db"
-PIDFILE = DATA / "comfy.pid"
-LOGFILE = DATA / "comfy.log"
-_lock = threading.RLock()
-_process = None
 app = Flask(__name__)
-
-def connection():
-    c = sqlite3.connect(DB)
-    c.row_factory = sqlite3.Row
-    return c
-
-def initialize():
-    with connection() as c:
-        c.executescript("""
-        CREATE TABLE IF NOT EXISTS slides (
-          lesson INTEGER NOT NULL, slide INTEGER NOT NULL,
-          story TEXT NOT NULL DEFAULT '', prompt TEXT NOT NULL DEFAULT '',
-          status TEXT NOT NULL DEFAULT 'planned',
-          PRIMARY KEY(lesson, slide));
-        CREATE TABLE IF NOT EXISTS rag (
-          id INTEGER PRIMARY KEY, source TEXT NOT NULL, chunk TEXT NOT NULL);
-        CREATE VIRTUAL TABLE IF NOT EXISTS rag_fts USING fts5(source,chunk);
-        """)
-        for entry in CANON:
-            for n in range(1,6):
-                c.execute("INSERT OR IGNORE INTO slides(lesson,slide) VALUES(?,?)",(entry["id"],n))
-        if c.execute("SELECT count(*) FROM rag").fetchone()[0] == 0:
-            for entry in CANON:
-                text=f'Урок {entry["id"]:03d}: {entry["title"]}. {entry["story"]}'
-                c.execute("INSERT INTO rag(source,chunk) VALUES (?,?)",("Canon",text))
-                c.execute("INSERT INTO rag_fts(source,chunk) VALUES (?,?)",("Canon",text))
-initialize()
-
-def owns(pid):
-    try:
-        cmd = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0",b" ").decode(errors="ignore")
-        cwd = Path(f"/proc/{pid}/cwd").resolve()
-        return cwd == COMFY and "main.py" in cmd
-    except (OSError,ValueError):
-        return False
-
-def managed_pid():
-    global _process
-    if _process is not None and _process.poll() is None and owns(_process.pid):
-        return _process.pid
-    try:
-        p=int(PIDFILE.read_text())
-        return p if owns(p) else None
-    except (OSError,ValueError):
-        return None
 
 def reach(url):
     try:
@@ -89,60 +42,51 @@ def home():
 
 @app.get("/api/status")
 def status():
+    snapshot = collect_snapshot()
+    snapshot.update({
+        "comfy_online": reach(COMFY_URL + "/system_stats"),
+        "ollama_online": reach(OLLAMA_URL + "/api/tags"),
+        "port": int(os.getenv("DRAFTSMAN_PORT", "9898")),
+    })
+    return jsonify(snapshot)
+
+
+@app.post("/api/shutdown")
+def shutdown():
+    """Stop only this Flask studio. It is launched manually via scripts/run.sh."""
+    def stop_self():
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    timer = threading.Timer(0.35, stop_self)
+    timer.daemon = True
+    timer.start()
+    return jsonify(shutting_down=True, note="Restart with bash scripts/run.sh")
+
+
+@app.post("/api/models/scan")
+def model_scan():
+    roots = os.getenv("DRAFTSMAN_MODEL_ROOTS", "/1tbdisk").split(os.pathsep)
+    return jsonify(scan_models([p for p in roots if p]))
+
+
+@app.get("/api/models/catalog")
+def model_catalog():
+    return jsonify(catalog=CATALOG)
+
+
+@app.get("/api/ollama/models")
+def ollama_models():
     try:
-        n=subprocess.run(["nvidia-smi","--query-gpu=name,memory.used,memory.total,temperature.gpu",
-                          "--format=csv,noheader,nounits"],capture_output=True,text=True,timeout=3)
-        gpu=n.stdout.strip().splitlines()[0] if n.returncode==0 else "Unavailable"
-    except (OSError, subprocess.TimeoutExpired):
-        gpu="Unavailable"
-    with _lock:
-        pid=managed_pid()
-    return jsonify(comfy_running=bool(pid),comfy_pid=pid,
-        comfy_online=reach(COMFY_URL+"/system_stats"),
-        ollama_online=reach(OLLAMA_URL+"/api/tags"),gpu=gpu,port=9898)
+        res = requests.get(OLLAMA_URL + "/api/tags", timeout=4)
+        res.raise_for_status()
+        models = [
+            {"name": m.get("name"), "size_gib": round(m.get("size", 0)/1073741824, 2)}
+            for m in res.json().get("models", [])
+        ]
+        return jsonify(models=models, note="Ollama language/vision models are not automatically diffusion image checkpoints")
+    except (requests.RequestException, ValueError) as exc:
+        return jsonify(error=f"Ollama unavailable: {exc}"), 502
 
-@app.post("/api/engine/start")
-def engine_start():
-    global _process
-    with _lock:
-        if managed_pid():
-            return jsonify(error="Engine already started by Draftsman"),409
-        if reach(COMFY_URL+"/system_stats"):
-            return jsonify(error="ComfyUI already occupies the internal port; not managed by Draftsman"),409
-        py=COMFY/".venv"/"bin"/"python"
-        if not py.exists() or not (COMFY/"main.py").exists():
-            return jsonify(error=f"Install ComfyUI with .venv under {COMFY} first"),422
-        with LOGFILE.open("ab") as log:
-            _process=subprocess.Popen(
-                [str(py),"main.py","--listen","127.0.0.1","--port",str(COMFY_PORT),
-                 "--disable-auto-launch","--lowvram"],
-                cwd=COMFY,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,
-                start_new_session=True)
-        PIDFILE.write_text(str(_process.pid))
-        return jsonify(started=True,pid=_process.pid),202
-
-@app.post("/api/engine/stop")
-def engine_stop():
-    with _lock:
-        pid=managed_pid()
-        if not pid: return jsonify(stopped=False,note="No managed engine")
-        try:
-            queue=requests.get(COMFY_URL+"/queue",timeout=3).json()
-            if queue.get("queue_running") or queue.get("queue_pending"):
-                return jsonify(error="Finish/cancel running jobs before shutdown"),409
-        except requests.RequestException:
-            pass
-        if not owns(pid): return jsonify(error="Process owner mismatch; refusing to stop"),409
-        os.killpg(pid,signal.SIGTERM)
-        PIDFILE.unlink(missing_ok=True)
-        return jsonify(stopped=True)
-
-@app.get("/api/engine/log")
-def engine_log():
-    if not LOGFILE.exists():return jsonify(lines=[])
-    with LOGFILE.open("rb") as f:
-        f.seek(max(0,LOGFILE.stat().st_size-18000))
-        return jsonify(lines=f.read().decode("utf-8",errors="replace").splitlines()[-60:])
 
 @app.get("/api/plan")
 def plan():
@@ -231,8 +175,8 @@ def generate():
     workflow_file=DATA/"workflows"/"comic_api.json"
     if not workflow_file.is_file():
         return jsonify(error="Export an actual model-compatible ComfyUI API workflow to data/workflows/comic_api.json"),422
-    if not managed_pid() or not reach(COMFY_URL+"/system_stats"):
-        return jsonify(error="Switch engine ON first"),409
+    if not reach(COMFY_URL+"/system_stats"):
+        return jsonify(error="Start ComfyUI from its terminal on 127.0.0.1:8188 first"),409
     workflow=json.loads(workflow_file.read_text(encoding="utf-8"))
     replaced=0
     for node in workflow.values():

@@ -61,7 +61,8 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:180px;overflow:auto;ba
 <div class="toolbar" style="margin-top:12px"><button id="save" class="primary" data-i="save">Сохранить</button><button id="generate" data-i="generate">Генерировать кадр</button></div>
 <h3 id="engineTitle">Графический генератор</h3>
 <p id="engineHint" class="muted">ComfyUI запускается отдельно из терминала. Веб-панель не запускает и не останавливает другие GPU-службы.</p>
-<div class="toolbar"><button id="powerOff" class="danger">Выключить студию</button><span class="stat" id="comfyNote">ComfyUI: ожидает запуска из терминала</span></div>
+<div class="toolbar"><button id="powerOff" class="danger">Выключить студию</button><button id="freeVram">Освободить VRAM</button><span class="stat" id="comfyNote">ComfyUI: ожидает запуска из терминала</span></div>
+<pre id="releaseInfo" style="display:none"></pre>
 <div id="message"></div>
 <div class="muted" data-i="readyNote">Для реальной генерации нужно установить ComfyUI и экспортировать API workflow модели с меткой {{PROMPT}}.</div>
 </section>
@@ -71,6 +72,8 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:180px;overflow:auto;ba
   <div class="toolbar">
     <button id="scanModels" class="primary">Найти модели на дисках</button>
     <button id="showOllamaModels">Показать модели Ollama</button>
+    <button id="downloadIllustrious">Скачать Illustrious XL v2.0</button>
+    <button id="downloadCheck">Состояние загрузки</button>
     <a href="https://huggingface.co/OnomaAIResearch/Illustrious-XL-v2.0" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">Illustrious XL v2.0 — официальный источник</a>
   </div>
   <div class="muted" id="modelStats"></div><div id="modelResults"></div>
@@ -106,7 +109,21 @@ const monitorTexts={
  it:{title:'Monitoraggio Huananzhi',update:'↻ Aggiorna',disk:'Dischi',zombies:'Processi zombie',note:'Solo aggiornamento manuale.',engine:'Generatore immagini',hint:'Avvia ComfyUI separatamente dal terminale.',off:'Chiudi studio',models:'Libreria modelli',scan:'Cerca modelli sui dischi',ollama:'Modelli Ollama',help:'Ollama scrive; ComfyUI genera immagini con un modello separato.'},
  be:{title:'Маніторынг Huananzhi',update:'↻ Абнавіць',disk:'Дыскі',zombies:'Зомбі-працэсы',note:'Толькі ручное абнаўленне.',engine:'Генератар малюнкаў',hint:'Запускай ComfyUI асобна з тэрмінала.',off:'Выключыць студыю',models:'Бібліятэка мадэляў',scan:'Знайсці мадэлі на дысках',ollama:'Паказаць мадэлі Ollama',help:'Ollama рыхтуе сюжэт; ComfyUI малюе асобнай мадэллю.'}
 };
+const actionTexts={
+ru:['Освободить VRAM','Скачать Illustrious XL v2.0','Состояние загрузки'],
+en:['Free VRAM','Download Illustrious XL v2.0','Download status'],
+zh:['释放显存','下载 Illustrious XL v2.0','下载状态'],
+de:['VRAM freigeben','Illustrious XL v2.0 herunterladen','Downloadstatus'],
+hi:['VRAM खाली करें','Illustrious XL v2.0 डाउनलोड','डाउनलोड स्थिति'],
+fr:['Libérer la VRAM','Télécharger Illustrious XL v2.0','État du téléchargement'],
+fi:['Vapauta VRAM','Lataa Illustrious XL v2.0','Latauksen tila'],
+ko:['VRAM 비우기','Illustrious XL v2.0 다운로드','다운로드 상태'],
+ja:['VRAMを解放','Illustrious XL v2.0をダウンロード','ダウンロード状況'],
+it:['Libera VRAM','Scarica Illustrious XL v2.0','Stato download'],
+be:['Вызваліць VRAM','Спампаваць Illustrious XL v2.0','Стан спампоўкі']};
 function extraTranslate(v){
+ const labels=actionTexts[v]||actionTexts.ru;
+ ['freeVram','downloadIllustrious','downloadCheck'].forEach((id,i)=>$(id).textContent=labels[i]);
  const x=monitorTexts[v]||monitorTexts.ru;
  for(const [id,key] of Object.entries({monitorTitle:'title',refreshMetrics:'update',diskTitle:'disk',zombieSummary:'zombies',metricsNote:'note',engineTitle:'engine',engineHint:'hint',powerOff:'off',modelsTitle:'models',scanModels:'scan',showOllamaModels:'ollama',modelHelp:'help'})){
   $(id).textContent=x[key];
@@ -155,7 +172,22 @@ async function check(){
 async function run(fn){try{await fn()}catch(e){message('Ошибка: '+e.message)}}
 $('refresh').onclick=()=>run(check);
 $('save').onclick=()=>run(async()=>{await api('/api/slides/'+lesson+'/'+slide,'POST',{story:$('story').value,prompt:$('prompt').value,status:$('approval').value});await load();message('Слайд сохранён')});
-$('powerOff').onclick=()=>run(async()=>{if(!confirm('Завершить Flask-студию? Ollama и ComfyUI останутся работать отдельно.'))return;await api('/api/shutdown','POST',{});message('Студия завершается. Для запуска: bash scripts/run.sh');$('powerOff').disabled=true});
+$('powerOff').onclick=()=>run(async()=>{
+ if(!confirm('Выключить только эту веб-студию на порту 9898? Ollama и ComfyUI останутся работать.'))return;
+ await api('/api/shutdown','POST',{});
+ message('Студия на 9898 завершается. Повторный запуск: bash scripts/run.sh');
+ $('powerOff').disabled=true;
+});
+$('freeVram').onclick=()=>run(async()=>{
+ $('freeVram').disabled=true;
+ message('Отправляю запросы на выгрузку моделей ComfyUI и Ollama...');
+ try{
+  let result=await api('/api/gpu/free','POST',{});
+  $('releaseInfo').style.display='block';
+  $('releaseInfo').textContent=JSON.stringify(result,null,2);
+  message('Запрос на освобождение VRAM выполнен. Проверь мониторинг: обнови показатели.');
+ }finally{$('freeVram').disabled=false}
+});
 $('refreshMetrics').onclick=()=>run(check);
 $('planAI').onclick=()=>run(async()=>{message('Ollama готовит пять последовательных свайпов...');let s=await api('/api/ollama/plan','POST',{lesson});await load();message('Сохранены '+s.saved+' черновиков. Проверь и утверди каждый.')});
 $('generate').onclick=()=>run(async()=>{let s=await api('/api/engine/generate','POST',{lesson,slide});message('ComfyUI принял задание: '+s.prompt_id)});
@@ -165,6 +197,17 @@ $('scanModels').onclick=()=>run(async()=>{
  $('modelStats').textContent=r.total_found+' моделей/весов · '+r.directories_checked+' каталогов · '+r.elapsed_seconds+' сек.'+(r.truncated?' · поиск ограничен':'');
  for(let m of r.models){let d=document.createElement('div');d.className='model-row';d.textContent=m.kind+' · '+m.filename+' · '+m.size_mib+' MiB · '+m.path;$('modelResults').append(d)}
  if(!r.models.length)$('modelResults').textContent='Кандидаты не найдены. Это не означает, что моделей нигде нет; проверь путь поиска.';
+});
+$('downloadIllustrious').onclick=()=>run(async()=>{
+ if(!confirm('Скачать официальный checkpoint Illustrious XL v2.0 (несколько ГБ) в models/checkpoints? Лицензия CreativeML OpenRAIL-M.'))return;
+ let r=await api('/api/models/download/illustrious','POST',{});
+ $('modelStats').textContent='Загрузка запущена. Проверяй состояние отдельной кнопкой.';
+ message('Загрузка в models/checkpoints. Она не запускается автоматически.');
+});
+$('downloadCheck').onclick=()=>run(async()=>{
+ let r=await api('/api/models/download/status');
+ $('modelStats').textContent='Состояние: '+r.status+' · '+r.message;
+ if(r.path)message('Модель: '+r.path);
 });
 $('showOllamaModels').onclick=()=>run(async()=>{
  let r=await api('/api/ollama/models');$('modelResults').replaceChildren();

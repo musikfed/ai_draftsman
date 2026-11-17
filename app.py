@@ -101,7 +101,7 @@ def shutdown():
 
 @app.post("/api/models/scan")
 def model_scan():
-    roots = os.getenv("DRAFTSMAN_MODEL_ROOTS", "/1tbdisk").split(os.pathsep)
+    roots = os.getenv("DRAFTSMAN_MODEL_ROOTS", "/1tbdisk:/1tb500dgmext:/1tb500dmntfs:/ssd120").split(os.pathsep)
     return jsonify(scan_models([p for p in roots if p]))
 
 

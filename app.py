@@ -1,17 +1,15 @@
 """PEGINELAB AI Draftsman: local comic studio, command-line lifecycle."""
-import json, os, re, signal, sqlite3, threading, uuid
+import io, json, os, re, secrets, signal, sqlite3, threading, uuid
 from pathlib import Path
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file
 import requests
 from studio.monitor import collect_snapshot
 from studio.models import CATALOG, scan_models
+from studio.jobs import submit_job, get_job, current_job, CHECKPOINT, WORKER_PY
 
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.getenv("DRAFTSMAN_DATA", str(BASE / "data"))).resolve()
 DATA.mkdir(parents=True, exist_ok=True)
-COMFY = Path(os.getenv("COMFYUI_DIR", "/1tbdisk/AI/ComfyUI")).resolve()
-COMFY_PORT = int(os.getenv("COMFYUI_PORT", "8188"))
-COMFY_URL = f"http://127.0.0.1:{COMFY_PORT}"
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:8b")
 CANON = json.loads((BASE / "canon" / "karate_linux.json").read_text(encoding="utf-8"))
@@ -80,7 +78,8 @@ def home():
 def status():
     snapshot = collect_snapshot()
     snapshot.update({
-        "comfy_online": reach(COMFY_URL + "/system_stats"),
+        "engine_ready": CHECKPOINT.is_file() and WORKER_PY.is_file(),
+        "engine_busy": current_job() is not None,
         "ollama_online": reach(OLLAMA_URL + "/api/tags"),
         "port": int(os.getenv("DRAFTSMAN_PORT", "9898")),
     })
@@ -140,39 +139,29 @@ def model_download_illustrious():
 
 @app.post("/api/gpu/free")
 def free_vram():
-    """Unload only Ollama/ComfyUI model caches. Never kill unrelated GPU processes."""
-    report = {"comfyui": "not running", "ollama": [], "warnings": []}
-    if reach(COMFY_URL + "/system_stats"):
-        try:
-            q = requests.get(COMFY_URL + "/queue", timeout=3)
-            q.raise_for_status()
-            queued = q.json()
-            if queued.get("queue_running") or queued.get("queue_pending"):
-                report["comfyui"] = "busy — not unloading during generation"
-            else:
-                r = requests.post(COMFY_URL + "/free",
-                    json={"unload_models": True, "free_memory": True}, timeout=15)
-                r.raise_for_status()
-                report["comfyui"] = "unload requested"
-        except (requests.RequestException, ValueError) as exc:
-            report["warnings"].append("ComfyUI: " + str(exc)[:150])
+    """Release locally loaded Ollama models. Image worker releases its CUDA context on exit."""
+    active = current_job()
+    if active:
+        return jsonify(error="Image generation is active. Wait for it to finish before releasing VRAM.",
+                       job_id=active["job_id"]), 409
+    report = {"image_worker": "not running — no persistent GPU process",
+              "ollama": [], "warnings": []}
     try:
-        p = requests.get(OLLAMA_URL + "/api/ps", timeout=5)
-        p.raise_for_status()
-        names = [m.get("name") or m.get("model") for m in p.json().get("models", [])]
+        running = requests.get(OLLAMA_URL + "/api/ps", timeout=5)
+        running.raise_for_status()
+        names = [x.get("name") or x.get("model") for x in running.json().get("models", [])]
         for name in filter(None, names):
             try:
                 r = requests.post(OLLAMA_URL + "/api/generate",
-                     json={"model": name, "keep_alive": "0s", "stream": False},timeout=20)
+                    json={"model":name, "keep_alive":"0s", "stream":False}, timeout=30)
                 r.raise_for_status()
-                report["ollama"].append({"model":name,"result":"unload requested"})
+                report["ollama"].append({"model":name, "result":"unload requested"})
             except requests.RequestException as exc:
-                report["ollama"].append({"model":name,"result":"error: "+str(exc)[:120]})
+                report["warnings"].append(f"{name}: {exc}")
     except (requests.RequestException, ValueError) as exc:
-        report["warnings"].append("Ollama: " + str(exc)[:150])
-    report["note"] = ("Requests are sent to the local model managers. "
-        "Other processes (including desktop and unrelated services) are not touched. "
-        "Memory may be retained by active jobs and GPU display.")
+        report["warnings"].append(f"Ollama: {exc}")
+    report["note"] = ("The image worker exits after each job; "
+        "its GPU context is released automatically. Other GPU programs are untouched.")
     return jsonify(report)
 
 
@@ -270,35 +259,122 @@ def ollama_plan():
     except (ValueError,KeyError,requests.RequestException) as e:
         return jsonify(error=f"Ollama planning failed: {e}"),502
 
+@app.get("/api/references")
+def reference_list():
+    directory = DATA / "references"
+    directory.mkdir(parents=True, exist_ok=True)
+    return jsonify(references=sorted(
+        p.name for p in directory.iterdir() if p.is_file() and p.suffix.lower()==".png"))
+
+
+@app.post("/api/references/upload")
+def reference_upload():
+    from PIL import Image, ImageOps
+    f = request.files.get("file")
+    if not f or not f.filename.lower().endswith((".png",".jpg",".jpeg",".webp")):
+        return jsonify(error="Choose PNG, JPEG or WEBP reference image"),400
+    content=f.read(12*1024*1024+1)
+    if len(content)>12*1024*1024:
+        return jsonify(error="Reference exceeds 12 MB"),413
+    try:
+        image=Image.open(io.BytesIO(content))
+        if image.width*image.height>22000000: return jsonify(error="Image too large"),413
+        image=ImageOps.exif_transpose(image).convert("RGB")
+        image.thumbnail((2048,2048))
+    except (OSError,ValueError) as exc:
+        return jsonify(error=f"Invalid image: {exc}"),400
+    folder=DATA/"references"
+    folder.mkdir(parents=True,exist_ok=True)
+    filename=uuid.uuid4().hex+".png"
+    image.save(folder/filename,format="PNG",optimize=True)
+    return jsonify(saved=True,filename=filename)
+
+
+@app.get("/api/loras")
+def lora_list():
+    folder=BASE/"models"/"loras"
+    if not folder.exists():return jsonify(loras=[])
+    return jsonify(loras=sorted(x.name for x in folder.iterdir()
+                               if x.is_file() and x.suffix.lower()==".safetensors"))
+
+
 @app.post("/api/engine/generate")
 def generate():
     p=request.get_json(silent=True) or {}
     lesson,slide=p.get("lesson"),p.get("slide")
     if type(lesson) is not int or type(slide) is not int or not (1<=lesson<=24 and 1<=slide<=5):
         return jsonify(error="Invalid lesson/slide"),400
-    with connection() as c:
-        record=c.execute("SELECT * FROM slides WHERE lesson=? AND slide=?",(lesson,slide)).fetchone()
-    if record["status"]!="approved":return jsonify(error="Approve this slide first"),409
-    workflow_file=DATA/"workflows"/"comic_api.json"
-    if not workflow_file.is_file():
-        return jsonify(error="Export an actual model-compatible ComfyUI API workflow to data/workflows/comic_api.json"),422
-    if not reach(COMFY_URL+"/system_stats"):
-        return jsonify(error="Start ComfyUI from its terminal on 127.0.0.1:8188 first"),409
-    workflow=json.loads(workflow_file.read_text(encoding="utf-8"))
-    replaced=0
-    for node in workflow.values():
-        if isinstance(node,dict) and isinstance(node.get("inputs",{}).get("text"),str):
-            val=node["inputs"]["text"]
-            if "{{PROMPT}}" in val:
-                node["inputs"]["text"]=val.replace("{{PROMPT}}",record["prompt"])
-                replaced+=1
-    if replaced!=1:return jsonify(error="Workflow must have exactly one text input containing {{PROMPT}}"),422
+    with connection() as db:
+        record=db.execute("SELECT * FROM slides WHERE lesson=? AND slide=?", (lesson,slide)).fetchone()
+    if not record or record["status"]!="approved" or not record["prompt"].strip():
+        return jsonify(error="Review and approve a non-empty slide prompt first"),409
+    mode=str(p.get("mode","txt2img"))
+    if mode not in ("txt2img","img2img"):
+        return jsonify(error="Mode not implemented; use txt2img or img2img"),400
+    variants=p.get("variants",1)
+    if type(variants) is not int or not 1<=variants<=3:
+        return jsonify(error="Variants must be 1, 2 or 3"),400
     try:
-        result=requests.post(COMFY_URL+"/prompt",json={"prompt":workflow,"client_id":str(uuid.uuid4())},timeout=15)
-        result.raise_for_status()
-        return jsonify(prompt_id=result.json().get("prompt_id"),submitted=True)
-    except requests.RequestException as e:
-        return jsonify(error=f"ComfyUI submission failed: {e}"),502
+        steps=int(p.get("steps",28))
+        strength=float(p.get("strength",0.55))
+        cfg=float(p.get("cfg",6.5))
+        seed=int(p.get("seed",0)) or secrets.randbelow(2**31)
+        quality=str(p.get("quality","standard"))
+        if quality not in ("standard","high") or not 10<=steps<=60 or not 0.15<=strength<=0.9 or not 1.0<=cfg<=12.0 or seed<0:
+            raise ValueError("Invalid generation settings")
+    except (TypeError, ValueError):
+        return jsonify(error="Invalid seed, steps, CFG, strength or resolution"),400
+    reference_name=str(p.get("reference",""))
+    reference=None
+    if mode=="img2img":
+        if not re.fullmatch(r"[0-9a-f]{32}\\.png",reference_name):
+            return jsonify(error="Upload and select a reference image"),400
+        reference=DATA/"references"/reference_name
+        if not reference.is_file():
+            return jsonify(error="Reference file not found"),404
+    lora=str(p.get("lora",""))
+    if lora and (not re.fullmatch(r"[A-Za-z0-9_. -]{1,160}\\.safetensors",lora)
+                 or not (BASE/"models"/"loras"/lora).is_file()):
+        return jsonify(error="Selected LoRA file not found"),400
+    spec={"lesson":lesson,"slide":slide,"mode":mode,
+          "prompt":record["prompt"],
+          "negative_prompt":"low quality, blurry, malformed anatomy, extra hands, text, watermark, signature, cropped",
+          "variants":variants,"seed":seed,"steps":steps,"cfg":cfg,
+          "strength":strength,"width":896 if quality=="high" else 768,
+          "height":1120 if quality=="high" else 960,
+          "reference":str(reference) if reference else "",
+          "lora":lora,"lora_scale":0.7}
+    try:
+        job_id=submit_job(spec)
+        return jsonify(submitted=True,job_id=job_id,
+                       note="Separate GPU process started; check status manually"),202
+    except (FileNotFoundError,RuntimeError,OSError) as exc:
+        return jsonify(error=str(exc)),422
+
+
+@app.get("/api/jobs/<job_id>")
+def job_status(job_id):
+    j=get_job(job_id)
+    if j is None:return jsonify(error="Job not found"),404
+    j.pop("traceback",None)
+    for out in j.get("outputs",[]):
+        out["preview_url"]=f'/api/jobs/{job_id}/images/{out["variant"]}'
+    return jsonify(j)
+
+
+@app.get("/api/jobs/<job_id>/images/<int:variant>")
+def job_image(job_id,variant):
+    if not 1<=variant<=3:return jsonify(error="Invalid variant"),404
+    job=get_job(job_id)
+    if job is None:return jsonify(error="Job not found"),404
+    for item in job.get("outputs",[]):
+        if item["variant"]==variant:
+            img=Path(item["png8"]).resolve()
+            folder=(DATA/"jobs"/job_id/"images").resolve()
+            if img.parent==folder and img.is_file():
+                return send_file(img,mimetype="image/png")
+    return jsonify(error="Image is not ready"),404
+
 
 if __name__=="__main__":
     app.run(host=os.getenv("DRAFTSMAN_HOST","0.0.0.0"),

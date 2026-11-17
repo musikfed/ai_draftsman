@@ -53,7 +53,7 @@ Dedicated subprocess: python -m studio.worker
 ## Изображения
 
 - Отдельный рабочий Python-venv с CUDA 12.4, PyTorch и Diffusers; Flask без импортов GPU-библиотек.
-- Модель Illustrious XL 2.0, один reference в img2img и optional SDXL LoRA, 1–3 варианта **одного узла**, исходные размеры 768×960 или 896×1120.
+- Выбираемые SDXL-модели Illustrious XL 2.0 и SDXL Base 1.0, один reference в img2img и optional SDXL LoRA, 1–48 вариантов **одного узла**, исходные размеры 768×960 или 896×1120.
 - Output 800×1000 indexed PNG-8 (до 256 цветов) + полноцветный master.
 - Ни модель, ни GPU процесс не запускаются при открытии панели.
 - LLM Ollama и изображения — отдельные модели и разные задачи.

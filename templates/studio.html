@@ -120,6 +120,8 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
     <button id="pullLLM" data-t="downloadLLM">Скачать LLM</button><button id="llmStatus" data-t="downloadStatus">Статус загрузки</button>
    </div>
    <div class="muted" id="llmInfo">Твои qwen3:8b, qwen3:4b-instruct и другие модели уже доступны. Не нужно скачивать их заново. Новые веса Ollama могут оказаться на системном диске, где мало места.</div>
+   <div class="muted">Изображения рисует SDXL, а не Qwen. Обучение своих персонажей через LoRA ещё не подключено.
+   <a href="https://github.com/musikfed/ai_draftsman/blob/main/docs/TRAINING_AND_MEMORY.md" target="_blank" rel="noopener noreferrer" style="color:var(--orange)">Модели, обучение и память — инструкция</a></div>
    <details><summary data-t="imageModels">Графическая модель (отдельно от LLM)</summary>
     <div class="toolbar"><button id="scanModels" data-t="scan">Найти веса на дисках</button><button id="downloadImage" data-t="downloadImage">Скачать Illustrious XL</button><button id="imageStatus" data-t="downloadStatus">Статус загрузки</button></div>
     <pre id="modelInfo"></pre>
@@ -238,8 +240,8 @@ async function loadProject(id,keepSelection=false){
 }
 function renderGraph(){
  const wrap=$('canvas'),svg=$('edges');
- const maxx=Math.max($('canvasViewport').clientWidth-5,...nodes.map(n=>n.x+215),360)+12;
- const maxy=Math.max($('canvasViewport').clientHeight-5,...nodes.map(n=>n.y+110),295)+12;
+ const maxx=Math.max($('canvasViewport').clientWidth-10,...nodes.map(n=>n.x+205),350);
+ const maxy=Math.max($('canvasViewport').clientHeight-10,...nodes.map(n=>n.y+95),280);
  wrap.style.width=maxx+'px';wrap.style.height=maxy+'px';
  svg.setAttribute('width',maxx);svg.setAttribute('height',maxy);
  svg.replaceChildren();
@@ -619,6 +621,9 @@ async function startup(){
   await refreshJobHistory(true);
   await status();
 }
+window.addEventListener('resize',()=>{
+  if(currentMode==='graph' && project)renderGraph();
+});
 startup().catch(e=>say(e.message));
 
 </script></body></html>

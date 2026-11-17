@@ -1,4 +1,4 @@
-"""PEGINELAB AI Draftsman: local comic studio, command-line lifecycle."""
+"""PEGINELAB AI Draftsman: universal local AI studio with optional legacy templates."""
 import io, json, os, re, secrets, signal, sqlite3, threading, uuid
 from pathlib import Path
 from flask import Flask, jsonify, render_template, request, send_file
@@ -39,16 +39,9 @@ def initialize():
         );
         CREATE VIRTUAL TABLE IF NOT EXISTS rag_fts USING fts5(source, chunk);
         """)
-        for lesson in CANON:
-            for number in range(1, 6):
-                db.execute("INSERT OR IGNORE INTO slides(lesson, slide) VALUES(?, ?)",
-                           (lesson["id"], number))
-        has_canon = db.execute("SELECT 1 FROM rag WHERE source='Canon' LIMIT 1").fetchone()
-        if not has_canon:
-            for lesson in CANON:
-                line = f'Урок {lesson["id"]:03d}: {lesson["title"]}. {lesson["story"]}'
-                db.execute("INSERT INTO rag(source,chunk) VALUES(?,?)", ("Canon",line))
-                db.execute("INSERT INTO rag_fts(source,chunk) VALUES(?,?)", ("Canon",line))
+        # Legacy tables are retained for previously created Karate Linux data.
+        # A new universal installation starts with no comics or forced 24x5 rows.
+        # Optional Karate project templates are imported explicitly by the user.
 
 initialize()
 

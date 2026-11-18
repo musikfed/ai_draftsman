@@ -82,10 +82,11 @@ def home():
 
 @app.get("/api/status")
 def status():
-    snapshot = collect_snapshot()
+    active = current_job()
+    snapshot = collect_snapshot(active_job=active)
     snapshot.update({
         "engine_ready": WORKER_PY.is_file() and any(x["installed"] for x in list_checkpoints()),
-        "engine_busy": current_job() is not None,
+        "engine_busy": active is not None,
         "ollama_online": reach(OLLAMA_URL + "/api/tags"),
         "port": int(os.getenv("DRAFTSMAN_PORT", "9898")),
     })

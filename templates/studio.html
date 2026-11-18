@@ -490,6 +490,9 @@ async function status(){
 }
 $('updateMetrics').onclick=()=>task(status);
 $('refreshStatus').onclick=()=>task(status);
+$('monitorPanel').addEventListener('toggle',()=>{
+ if($('monitorPanel').open)task(status);
+});
 $('powerOff').onclick=()=>task(async()=>{
  if(!confirm('Выключить только Flask-студию? Ollama и GPU-задания не трогать?'))return;
  await api('/api/shutdown','POST',{});say('Студия завершает работу. Запуск: bash scripts/run.sh');
@@ -761,6 +764,7 @@ async function updateJob(){
    $('jobStage').textContent='🌊 Не быстро, зато с погружением! · '+(job.stage||'Загрузка модели')+' · '+(job.progress||0)+'%';
    $('jobBar').value=Number(job.progress||0);
    renderWaiting(job.total,job.completed);
+   if($('monitorPanel').open)await status();
    scheduleJobRefresh();
  }else{stopJobPolling();await refreshJobHistory(false)}
  $('previews').replaceChildren(...(job.outputs||[]).map(o=>{

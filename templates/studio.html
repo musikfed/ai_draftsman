@@ -31,7 +31,15 @@ details{border-top:1px solid #2a3e57;padding-top:7px;margin-top:9px}summary{curs
 pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto;font-size:12px}
 #message{min-height:24px;color:var(--green);font-size:12px;padding:6px 0}
 .meter{height:4px;background:#314159;border-radius:5px;overflow:hidden;margin-top:5px}.meter i{display:block;height:100%;background:var(--orange)}
-#systemMetrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+#systemMetrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+#processMonitor{overflow-x:auto;margin-top:10px}
+#processMonitor table{width:100%;border-collapse:collapse;text-align:left;font-size:12px}
+#processMonitor th,#processMonitor td{padding:7px 8px;border-bottom:1px solid #2b415c;white-space:nowrap}
+#processMonitor th{color:var(--muted);font-weight:500}
+#monitorPeaks{margin:8px 0;color:#b8d7f0}
+#modelDownloadArea{margin:7px 0;border:1px solid var(--line);border-radius:8px;padding:9px;background:var(--field)}
+#modelDownloadArea progress{width:100%;accent-color:var(--orange)}
+
 .metric{min-width:0;background:var(--field);border:1px solid var(--line);border-radius:7px;padding:8px}
 .metric strong{display:block;font-size:15px}.metric small{display:block;color:var(--muted);font-size:11px}
 #disks{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}#disks .metric{flex:1 1 150px;padding:6px 9px}
@@ -104,7 +112,14 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
 <main>
 <details class="panel" id="monitorPanel"><summary data-t="monitor">Мониторинг Huananzhi (по нажатию, без фонового опроса)</summary>
  <div style="margin-top:10px" class="toolbar"><button id="updateMetrics" data-t="update">↻ Обновить показатели</button><span class="muted" data-t="statsInfo">CPU · RAM · VRAM · SWAP · Zombie · реальные диски</span></div>
- <div id="systemMetrics"></div><div id="disks"></div><div class="muted" id="zombies"></div>
+ <div id="systemMetrics"></div>
+ <div id="monitorPeaks" class="muted">Пиковые показания после открытия страницы: ещё нет замеров</div>
+ <h3>Потребление по процессам</h3>
+ <div class="muted">Flask · Ollama · Diffusers; CPU может быть выше 100% на многоядерном сервере. RAM — RSS, VRAM — выделение вычислительного процесса NVIDIA.</div>
+ <div id="processMonitor"></div>
+ <div class="muted" id="gpuProcessInfo"></div>
+ <h3>Физические диски</h3>
+ <div id="disks"></div><div class="muted" id="zombies"></div>
 </details>
 <div class="toolbar mode-tabs"><button id="quickTab" class="chosen">⚡ Быстрый рисунок — без графа</button><button id="graphTab">◈ Проекты и граф</button><span class="muted">Нейросеть рисует на сервере, Ollama помогает составить промпт</span></div>
 <div class="cols" id="workArea">
@@ -164,6 +179,10 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
    <a href="https://github.com/musikfed/ai_draftsman/blob/main/docs/TRAINING_AND_MEMORY.md" target="_blank" rel="noopener noreferrer" style="color:var(--orange)">Модели, обучение и память — инструкция</a></div>
    <details><summary data-t="imageModels">Графическая модель (отдельно от LLM)</summary>
     <div class="toolbar"><button id="scanModels" data-t="scan">Найти веса на дисках</button><button id="downloadImage">Скачать выбранную SDXL</button><button id="imageStatus" data-t="downloadStatus">Статус загрузки</button></div>
+    <div id="modelDownloadArea" class="collapsed">
+     <div class="muted" id="modelDownloadCaption"></div>
+     <progress id="modelDownloadBar" max="100" value="0"></progress>
+    </div>
     <pre id="modelInfo"></pre>
    </details>
   </div>
@@ -196,7 +215,10 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
     <div><label>Steps (10–60)</label><input id="steps" type="number" min="10" max="60" value="28"></div>
     <div><label>CFG (1–12)</label><input id="cfg" type="number" min="1" max="12" step="0.5" value="6.5"></div>
    </div>
-   <label for="imageCheckpoint">Графическая модель SDXL</label><select id="imageCheckpoint"><option value="illustrious-xl-v2">Illustrious XL 2.0</option></select>
+   <label for="imageCheckpoint">Графическая модель SDXL</label>
+<div class="toolbar"><select id="imageCheckpoint" class="grow"><option value="illustrious-xl-v2">Illustrious XL 2.0</option></select>
+<button id="downloadSelected">⬇ Скачать модель</button></div>
+<div id="downloadStatusSmall" class="muted">Checkpoint устанавливается отдельно на /1tbdisk</div>
 <div class="muted" id="modelRole">Ollama пишет промпты. SDXL рисует на GPU; LoRA помогает сохранять стиль.</div><div class="muted" id="variantsHint">Авто — из текста («сделай 7 вариантов»), либо введи 1–48.</div>
 <label data-t="strength">Сила img2img (0.15–0.90)</label><input id="strength" type="number" min=".15" max=".9" step=".05" value=".55">
    <label data-t="reference">Изображение-образец (только для img2img)</label><select id="reference"><option value="">Без референса</option></select>

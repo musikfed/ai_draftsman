@@ -431,20 +431,60 @@ function meter(name,value,pct,sub){
  let fill=document.createElement('i');fill.style.width=Math.max(0,Math.min(100,Number(pct)||0))+'%';
  track.append(fill);box.append(label,strong,detail,track);return box;
 }
+const peakUsage={cpu:0,ram:0,vram:0,gpu:0};
+function renderProcesses(rows, gpuProcesses){
+ const wrap=$('processMonitor');wrap.replaceChildren();
+ if(!rows.length){wrap.textContent='Сейчас процессы студии не найдены';return}
+ const table=document.createElement('table');
+ const head=document.createElement('thead'),tr=document.createElement('tr');
+ for(const h of ['Служба / процесс','PID','CPU','RAM (RSS)','VRAM NVIDIA']){
+  const th=document.createElement('th');th.textContent=h;tr.append(th);
+ }
+ head.append(tr);table.append(head);
+ const body=document.createElement('tbody');
+ for(const p of rows){
+  const row=document.createElement('tr');
+  const cells=[p.role+' · '+p.name,String(p.pid),
+   (p.cpu_percent??0)+'%',fmt(p.ram_mib),
+   p.vram_mib==null?'—':fmt(p.vram_mib)];
+  for(const str of cells){const td=document.createElement('td');td.textContent=str;row.append(td)}
+  body.append(row);
+ }
+ table.append(body);wrap.append(table);
+ const other=(gpuProcesses||[]).filter(p=>!rows.some(row=>row.pid===p.pid));
+ $('gpuProcessInfo').textContent=other.length?'Дополнительные процессы GPU: '+
+   other.map(p=>'PID '+p.pid+' · '+(p.name||'')+' · '+
+             (p.vram_mib==null?'VRAM неизвестна':fmt(p.vram_mib))).join('; '):
+   'Время выполнения и VRAM выводятся только для обнаруженных вычислительных процессов GPU.';
+}
 async function status(){
- const s=await api('/api/status');const g=s.gpu?.devices?.[0];
+ const s=await api('/api/status');
+ const g=s.gpu?.devices?.[0];
  $('gpu').textContent=g?'RTX 3060 · '+g.temperature_c+'°C':'GPU unavailable';
  $('workerIndicator').classList.toggle('on',Boolean(s.engine_ready));
  $('ollamaIndicator').classList.toggle('on',Boolean(s.ollama_online));
  const c=s.cpu,r=s.ram,sw=s.swap,z=s.zombies;
  $('systemMetrics').replaceChildren(
-  meter('CPU',c.percent+'%',c.percent,c.logical_threads+' threads'),
-  meter('RAM',r.percent+'%',r.percent,fmt(r.used_mib)+' / '+fmt(r.total_mib)),
-  meter('VRAM',g?g.vram_percent+'%':'—',g?.vram_percent,g?fmt(g.vram_used_mib)+' / '+fmt(g.vram_total_mib):''),
+  meter('CPU хоста',c.percent+'%',c.percent,
+    c.logical_threads+' потоков · load '+c.load_average.join('/')),
+  meter('RAM хоста',r.percent+'%',r.percent,fmt(r.used_mib)+' / '+fmt(r.total_mib)),
+  meter('Видеопамять VRAM',g?g.vram_percent+'%':'—',g?.vram_percent,
+    g?fmt(g.vram_used_mib)+' / '+fmt(g.vram_total_mib):'nvidia-smi недоступен'),
+  meter('Нагрузка GPU',g?g.utilization_percent+'%':'—',g?.utilization_percent,
+    g?g.temperature_c+'°C · '+g.power_w+' W':'нет данных'),
   meter('SWAP',sw.percent+'%',sw.percent,fmt(sw.used_mib)+' / '+fmt(sw.total_mib)),
-  meter('ZOMBIE',String(z.count),null,'PID / PPID')
+  meter('Зомби-процессы',String(z.count),null,'системные PID/PPID')
  );
- $('disks').replaceChildren(...s.disks.map(d=>meter(d.mount,d.percent+'%',d.percent,fmt(d.free_mib)+' свободно')));
+ peakUsage.cpu=Math.max(peakUsage.cpu,Number(c.percent)||0);
+ peakUsage.ram=Math.max(peakUsage.ram,Number(r.used_mib)||0);
+ peakUsage.vram=Math.max(peakUsage.vram,Number(g?.vram_used_mib)||0);
+ peakUsage.gpu=Math.max(peakUsage.gpu,Number(g?.utilization_percent)||0);
+ $('monitorPeaks').textContent='Максимум из замеров этой вкладки: CPU '+peakUsage.cpu.toFixed(1)+
+    '% · RAM '+fmt(peakUsage.ram)+' · VRAM '+fmt(peakUsage.vram)+
+    ' · GPU '+peakUsage.gpu.toFixed(1)+'%. Это не гарантированный пик между замерами.';
+ renderProcesses(s.processes||[],s.gpu?.processes||[]);
+ $('disks').replaceChildren(...s.disks.map(d=>meter(d.mount,d.percent+'%',d.percent,
+     fmt(d.used_mib)+' занято · '+fmt(d.free_mib)+' свободно · '+d.device)));
  $('zombies').textContent=z.count?z.examples.map(x=>x.pid+' ← '+x.ppid+' '+x.name).join(', '):'Зомби нет';
 }
 $('updateMetrics').onclick=()=>task(status);

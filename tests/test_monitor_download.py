@@ -48,6 +48,30 @@ class CheckpointDownloadTests(unittest.TestCase):
 
 
 class HostTelemetryTests(unittest.TestCase):
+    def test_two_physical_xeon_sockets_group_logical_threads(self):
+        """Eight logical threads across two actual CPU packages -> two meters."""
+        real_read_text = Path.read_text
+        def cpu_topology(path, *args, **kwargs):
+            name = str(path)
+            if name == "/proc/cpuinfo":
+                return ""
+            if "physical_package_id" in name:
+                logical_id = int(name.split("/cpu")[-1].split("/")[0])
+                return "0" if logical_id < 4 else "1"
+            return real_read_text(path, *args, **kwargs)
+        with patch.object(Path, "read_text", cpu_topology):
+            sockets = monitor.physical_cpu_snapshot([10, 20, 30, 40, 50, 60, 70, 80])
+        self.assertEqual(len(sockets), 2)
+        self.assertEqual([c["percent"] for c in sockets], [25.0, 65.0])
+        self.assertEqual([c["threads"] for c in sockets], [4, 4])
+        self.assertEqual([c["label"] for c in sockets], ["CPU 1", "CPU 2"])
+
+    def test_missing_socket_topology_does_not_invent_cpu_two(self):
+        with patch.object(Path, "read_text", side_effect=OSError):
+            sockets = monitor.physical_cpu_snapshot([20, 40])
+        self.assertEqual(len(sockets), 1)
+        self.assertEqual(sockets[0]["percent"], 30.0)
+
     def test_endpoint_has_real_resource_keys(self):
         sample = {
             "cpu":{"percent":14.5,"logical_threads":32,"physical_cores":16,"load_average":[1,2,3]},

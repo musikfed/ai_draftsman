@@ -25,6 +25,9 @@ class TurtleWaitingUITests(unittest.TestCase):
         self.assertIn("prefers-reduced-motion",html)
         self.assertIn("grid.classList.toggle('single',visible===1)",html)
         self.assertIn("renderWaiting(job.total,job.completed)",html)
+        self.assertIn('id="demoWait"',html)
+        self.assertIn("renderWaiting(amount)",html)
+        self.assertIn("Демо: черепаха плавает, но GPU не запущен",html)
 
     def test_waiting_only_for_active_jobs(self):
         html=(BASE/"templates"/"studio.html").read_text(encoding="utf-8")

@@ -42,17 +42,51 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
 .cols.quick #nodeInspector,.cols.quick #projectKnowledge{display:none}
 #quickSection textarea{min-height:115px}
 .wait-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:10px 0}
-.wait-slot{height:158px;min-width:0;overflow:hidden;position:relative;isolation:isolate;border:1px solid #48678d;border-radius:10px;background:linear-gradient(105deg,#142940 0%,#29455e 34%,#162a42 68%,#142940 100%);background-size:220% 100%;animation:waiting 3.2s linear infinite;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#b6cce2}
-.wait-turtle{font-size:32px;display:block;filter:drop-shadow(0 2px 4px #0119);animation:turtle-step 1.9s ease-in-out infinite;z-index:2}
-.wait-bubble{position:absolute;bottom:-20px;width:var(--bubble-size,12px);height:var(--bubble-size,12px);left:var(--bubble-x,30%);border:1px solid #8fc9f2aa;border-radius:50%;background:radial-gradient(circle at 30% 30%,#f0fbffdd 0%,#60acd838 27%,#0f39511a 72%);animation:bubble-float var(--bubble-speed,3.7s) ease-in infinite;animation-delay:var(--bubble-delay,0s);opacity:0;pointer-events:none}
-.wait-caption{position:relative;z-index:2;text-align:center;font-size:11px;color:#d6e8f9;margin:5px 4px 0;text-shadow:0 1px 3px #061627}
+.wait-grid.single{grid-template-columns:minmax(0,1fr)}
+.wait-slot{height:174px;min-width:0;overflow:hidden;position:relative;isolation:isolate;
+ border:1px solid #356a8a;border-radius:11px;display:flex;flex-direction:column;
+ align-items:center;justify-content:flex-end;padding:8px 5px;
+ background:radial-gradient(ellipse at 50% -20%,#3ca9c157,transparent 59%),
+ linear-gradient(175deg,#0c5c7c 0%,#0a3b61 44%,#082a49 75%,#061a32 100%);
+ box-shadow:inset 0 12px 30px #8cdbf113,inset 0 -15px 25px #020e1e6c}
+.wait-grid.single .wait-slot{height:210px}
+.wait-slot::before{content:"";position:absolute;z-index:0;inset:-45% -10%;
+ background:repeating-linear-gradient(105deg,transparent 0 34px,#b5f7fc13 37px 45px,transparent 55px 91px);
+ transform:skewX(-12deg);animation:underwater-rays 18s ease-in-out infinite alternate;pointer-events:none}
+.wait-slot::after{content:"";position:absolute;inset:auto -10% -24px;height:65px;
+ background:radial-gradient(ellipse at 20% 20%,#a0f3e431,transparent 50%),
+ radial-gradient(ellipse at 70% 50%,#49c7d526,transparent 65%);
+ animation:underwater-current 11s ease-in-out infinite alternate;pointer-events:none}
+.wait-turtle{display:block;width:clamp(96px,85%,170px);height:128px;max-width:90%;
+ object-fit:contain;position:relative;z-index:2;pointer-events:none;
+ filter:drop-shadow(0 8px 9px #0013278c);
+ transform-origin:50% 56%;will-change:transform;
+ animation:sea-turtle-swim 9s ease-in-out infinite}
+.wait-grid.single .wait-turtle{height:165px;width:min(230px,75%)}
+.wait-slot:nth-child(2) .wait-turtle{animation-delay:-3.4s;animation-direction:alternate-reverse}
+.wait-slot:nth-child(3) .wait-turtle{animation-delay:-6.8s}
+.wait-bubble{position:absolute;bottom:-20px;width:var(--bubble-size,12px);height:var(--bubble-size,12px);
+ left:var(--bubble-x,30%);border:1px solid #c6f1ffba;border-radius:50%;
+ background:radial-gradient(circle at 32% 26%,#fbffffc9 0%,#94d7f35e 23%,#2b91bd15 77%);
+ box-shadow:inset -1px -2px 4px #08374a55,0 0 7px #95e4ff54;
+ animation:bubble-float var(--bubble-speed,4.5s) ease-in infinite;
+ animation-delay:var(--bubble-delay,0s);opacity:0;pointer-events:none;z-index:1}
+.wait-caption{position:relative;z-index:3;text-align:center;font-size:11px;color:#e1f5ff;
+ text-shadow:0 1px 4px #061627;background:#082844b5;padding:2px 7px;
+ border:1px solid #ffffff17;border-radius:16px;max-width:95%}
 .wait-overflow{grid-column:1/-1;text-align:center;font-size:12px;color:var(--muted)}
-@keyframes waiting{to{background-position-x:-220%}}
-@keyframes turtle-step{0%,100%{transform:translateX(-6px) rotate(-4deg)}50%{transform:translateX(8px) rotate(3deg)}}
-@keyframes bubble-float{0%{transform:translateY(0) scale(.65);opacity:0}20%{opacity:.9}80%{opacity:.7}100%{transform:translateY(-180px) scale(1.2);opacity:0}}
+@keyframes sea-turtle-swim{0%{transform:translate3d(-23px,8px,0) rotate(-7deg) scale(.94)}
+ 23%{transform:translate3d(-8px,-6px,0) rotate(-2deg) scale(.98)}
+ 50%{transform:translate3d(19px,-13px,0) rotate(5deg) scale(1.02)}
+ 77%{transform:translate3d(9px,2px,0) rotate(0deg) scale(.98)}
+ 100%{transform:translate3d(-23px,8px,0) rotate(-7deg) scale(.94)}}
+@keyframes bubble-float{0%{transform:translate3d(0,0,0) scale(.55);opacity:0}
+ 20%{opacity:.92}80%{opacity:.65}100%{transform:translate3d(18px,-220px,0) scale(1.18);opacity:0}}
+@keyframes underwater-rays{from{transform:translateX(-4%) skewX(-12deg);opacity:.42}to{transform:translateX(8%) skewX(-12deg);opacity:.78}}
+@keyframes underwater-current{from{transform:translateX(-8%)}to{transform:translateX(12%)}}
 #jobProgress{margin:8px 0}#jobProgress progress{width:100%;height:12px;accent-color:var(--orange)}
 #jobHistory{max-width:100%;min-width:0}
-@media(prefers-reduced-motion:reduce){.wait-slot,.wait-turtle,.wait-bubble{animation:none}.wait-bubble{opacity:.25}}
+@media(prefers-reduced-motion:reduce){.wait-slot::before,.wait-slot::after,.wait-turtle,.wait-bubble{animation:none!important}.wait-bubble{opacity:.25}}
 
 @media(max-width:970px){.cols{grid-template-columns:1fr}#canvasViewport{height:440px}}
 @media(max-width:600px){header{padding:9px}main{padding:8px}.panel{padding:10px}.grid3,.grid2{grid-template-columns:1fr 1fr}#systemMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -555,12 +589,15 @@ function renderWaiting(total,completed=0){
  const start=Math.floor(Math.min(completed,amount-1)/3)*3;
  const visible=Math.min(3,amount-start);
  const grid=$('waitGrid');
+ grid.classList.toggle('single',visible===1);
  if(grid.querySelectorAll('.wait-slot').length!==visible){
   grid.replaceChildren();
   for(let i=0;i<visible;i++){
    const card=document.createElement('div');card.className='wait-slot';
-   const turtle=document.createElement('span');turtle.className='wait-turtle';
-   turtle.textContent='🐢';turtle.setAttribute('aria-hidden','true');card.append(turtle);
+   const turtle=document.createElement('img');turtle.className='wait-turtle';
+   turtle.src='/static/images/sea-turtle.webp';turtle.alt='';
+   turtle.width=160;turtle.height=160;turtle.decoding='async';
+   turtle.setAttribute('aria-hidden','true');card.append(turtle);
    const caption=document.createElement('span');caption.className='wait-caption';card.append(caption);
    for(let j=0;j<6;j++){
     const bubble=document.createElement('i');bubble.className='wait-bubble';
@@ -574,12 +611,12 @@ function renderWaiting(total,completed=0){
   }
  }
  [...grid.querySelectorAll('.wait-caption')].forEach((el,i)=>{
-  el.textContent='Вариант '+(start+i+1)+' / '+amount+(start+i<completed?' · готов':' · черепашка трудится');
+  el.textContent='Вариант '+(start+i+1)+' / '+amount+(start+i<completed?' · готов':' · черепашка плывёт');
  });
  let overflow=grid.querySelector('.wait-overflow');
  if(amount>visible){
   if(!overflow){overflow=document.createElement('div');overflow.className='wait-overflow';grid.append(overflow)}
-  overflow.textContent='Готово '+completed+' из '+amount+' · по три карточки на экране, последовательно на RTX 3060';
+  overflow.textContent='Готово '+completed+' из '+amount+' · черепашки сопровождают последовательную генерацию';
  }else if(overflow){overflow.remove()}
 }
 function stopJobPolling(){if(jobTimer){clearTimeout(jobTimer);jobTimer=null}}
@@ -598,7 +635,7 @@ async function updateJob(){
  const busy=['running','queued'].includes(job.status);
  $('jobProgress').classList.toggle('collapsed',!busy);
  if(busy){
-   $('jobStage').textContent=(job.stage||'Загрузка модели')+' · '+(job.progress||0)+'%';
+   $('jobStage').textContent='🌊 Не быстро, зато с погружением! · '+(job.stage||'Загрузка модели')+' · '+(job.progress||0)+'%';
    $('jobBar').value=Number(job.progress||0);
    renderWaiting(job.total,job.completed);
    scheduleJobRefresh();
@@ -652,7 +689,7 @@ $('generate').onclick=()=>task(async()=>{
   $('jobInfo').textContent='Задание '+currentJob+' принято';
   $('jobProgress').classList.remove('collapsed');
   $('jobBar').value=0;
-  $('jobStage').textContent='В очереди · загрузка графической модели';
+  $('jobStage').textContent='🌊 Черепашка уже в воде — модель готовится к рисованию';
   renderWaiting(/^\d+$/.test(settings.variants)?Number(settings.variants):1);
   await refreshJobHistory(false);
   await updateJob();

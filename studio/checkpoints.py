@@ -12,6 +12,8 @@ CHECKPOINTS = {
         "title": "Illustrious XL v2.0 — манга / иллюстрации",
         "repo_id": "OnomaAIResearch/Illustrious-XL-v2.0",
         "filename": "Illustrious-XL-v2.0.safetensors",
+        "expected_size_bytes": 6940000000,
+        "expected_sha256": "c2a1a3eaa13d4c107dc7e00c3fe830cab427aa026362740ea094745b3422a331",
         "family": "SDXL",
         "config": "stabilityai/stable-diffusion-xl-base-1.0",
         "license": "creativeml-openrail-m",
@@ -21,6 +23,8 @@ CHECKPOINTS = {
         "title": "Stable Diffusion XL Base 1.0 — универсальная",
         "repo_id": "stabilityai/stable-diffusion-xl-base-1.0",
         "filename": "sd_xl_base_1.0.safetensors",
+        "expected_size_bytes": 6940000000,
+        "expected_sha256": "31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
         "family": "SDXL",
         "config": "stabilityai/stable-diffusion-xl-base-1.0",
         "license": "openrail++",
@@ -40,7 +44,11 @@ def get_checkpoint(model_id: str):
 
 def list_checkpoints():
     return [
-        {"id": k, **v, "installed": (MODEL_DIR / v["filename"]).is_file(),
+        {"id": k, **v,
+         "installed": ((MODEL_DIR / v["filename"]).is_file() and
+                       (MODEL_DIR / v["filename"]).stat().st_size >= 6_500_000_000),
+         "downloaded_bytes": ((MODEL_DIR / (v["filename"] + ".part")).stat().st_size
+                              if (MODEL_DIR / (v["filename"] + ".part")).is_file() else 0),
          "path": str(MODEL_DIR / v["filename"])}
         for k, v in CHECKPOINTS.items()
     ]

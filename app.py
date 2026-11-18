@@ -8,6 +8,7 @@ from studio.models import CATALOG, scan_models
 from studio.jobs import submit_job, get_job, current_job, recent_jobs, WORKER_PY
 from studio.checkpoints import CHECKPOINTS, DEFAULT_CHECKPOINT, get_checkpoint, list_checkpoints
 from studio.parameters import choose_variants, MAX_VARIANTS
+from studio.downloads import download_checkpoint
 
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.getenv("DRAFTSMAN_DATA", str(BASE / "data"))).resolve()
@@ -126,27 +127,30 @@ def start_checkpoint_download(model_id):
         return jsonify(error="Unsupported model. Only verified SDXL checkpoints are listed."), 400
     with _download_lock:
         if _download_state["status"] == "running":
-            return jsonify(error="Another image checkpoint is downloading"), 409
+            return jsonify(error="Another checkpoint download is already running"), 409
+        _download_state.clear()
         _download_state.update(status="running", model=model_id,
-                               message="Downloading " + CHECKPOINTS[model_id]["title"], path=None)
+                               stage="Проверка каталога на /1tbdisk",percent=0,
+                               downloaded_bytes=0,
+                               total_bytes=CHECKPOINTS[model_id]["expected_size_bytes"],
+                               speed_mib_s=0, message="Загрузка модели началась")
+    def progress(update):
+        with _download_lock:
+            _download_state.update(update)
     def worker():
         try:
-            from huggingface_hub import hf_hub_download
-            path, config = get_checkpoint(model_id)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            local_path = hf_hub_download(
-                repo_id=config["repo_id"], filename=config["filename"],
-                local_dir=path.parent, cache_dir=DATA/"huggingface"/"hub"
-            )
+            local_path = download_checkpoint(model_id, progress)
             with _download_lock:
                 _download_state.update(status="completed",model=model_id,
-                    message="SDXL checkpoint saved to disk. It will load only for a requested render.",
+                    stage="Готово · SHA-256 проверен",
+                    percent=100, message="Модель сохранена на /1tbdisk",
                     path=str(local_path))
         except Exception as exc:
             with _download_lock:
-                _download_state.update(status="failed",model=model_id,message=str(exc)[:500])
-    threading.Thread(target=worker, daemon=True, name="hf-image-download").start()
-    return jsonify(status="running", model=model_id), 202
+                _download_state.update(status="failed",model=model_id,
+                    stage="Ошибка загрузки",message=str(exc)[:500])
+    threading.Thread(target=worker, daemon=True, name="sdxl-image-download").start()
+    return jsonify(status="running",model=model_id), 202
 
 
 @app.post("/api/images/models/download")

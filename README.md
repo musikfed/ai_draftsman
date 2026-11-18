@@ -20,10 +20,12 @@
 ```bash
 cd /1tbdisk/PegineLab/ai_draftsman
 git pull --ff-only
-bash scripts/install.sh
-uv run python -m unittest discover -s tests -v
+bash scripts/install.sh --gpu   # Flask + отдельное CUDA-окружение, без скачивания моделей
+uv run --no-sync python -m unittest discover -s tests -v
 bash scripts/run.sh
 ```
+
+**Что делает установщик:** `bash scripts/install.sh` обновляет только Flask-окружение; `bash scripts/install.sh --gpu` добавляет отдельное CUDA-окружение. При повторном запуске исправное GPU-окружение не переустанавливается. Все окружения, временные файлы загрузок и кэши размещаются под `/1tbdisk/PegineLab/ai_draftsman`. Сами модели SDXL не скачиваются автоматически — это отдельная кнопка в интерфейсе. `bash scripts/run.sh` только запускает уже подготовленную панель, без автоматической установки пакетов.
 
 Без sudo, chown, chmod и без повторной установки существующей Ollama. Для переключения интерфейса желательно обновить страницу браузера с Ctrl+F5. Если `git pull --ff-only` отклоняет незакоммиченные локальные изменения, не применяй `reset --hard` — разбери изменения отдельно.
 

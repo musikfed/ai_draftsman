@@ -202,7 +202,7 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
    <label data-t="reference">Изображение-образец (только для img2img)</label><select id="reference"><option value="">Без референса</option></select>
    <div class="toolbar"><input id="referenceFile" type="file" accept=".jpg,.jpeg,.png,.webp" class="grow"><button id="uploadReference" data-t="upload">Добавить образец</button></div>
    <label>SDXL LoRA</label><select id="lora"><option value="">Без LoRA</option></select>
-   <div class="toolbar" style="margin-top:10px"><button id="generate" class="primary" data-t="generate">Генерировать</button><button id="checkJob" data-t="checkJob">Проверить результат</button></div>
+   <div class="toolbar" style="margin-top:10px"><button id="generate" class="primary" data-t="generate">Генерировать</button><button id="checkJob" data-t="checkJob">Проверить результат</button><button id="demoWait">🌊 Демо ожидания</button></div>
    <div id="jobProgress" class="collapsed"><div class="muted" id="jobStage">Загрузка модели</div><progress id="jobBar" max="100" value="0"></progress><div id="waitGrid" class="wait-grid"></div></div>
    <pre id="jobInfo" class="collapsed"></pre><div id="previews"></div>
    <details><summary>История генераций — сохраняется после F5</summary>
@@ -235,7 +235,7 @@ const TR={
  be:{projects:'Праекты',newProject:'Новы праект',graph:'Рэдактар графа',inspector:'Рэдактар вузла',addNode:'Дадаць вузел',saveNode:'Захаваць вузел',generate:'Стварыць выяву',llmManager:'Мадэлі Ollama',downloadLLM:'Спампаваць LLM',projectSettings:'Налады праекта'}
 };
 let lang='ru', projects=[], project=null, nodes=[], edges=[], chosen=0, currentJob='';
-let currentMode='graph', jobTimer=null;
+let currentMode='graph', jobTimer=null, demoWaiting=false, activeRendering=false;
 let busy=false;
 function say(s){$('message').textContent=String(s)}
 async function api(url,method='GET',data){
@@ -619,6 +619,18 @@ function renderWaiting(total,completed=0){
   overflow.textContent='Готово '+completed+' из '+amount+' · черепашки сопровождают последовательную генерацию';
  }else if(overflow){overflow.remove()}
 }
+$('demoWait').onclick=()=>{
+ if(activeRendering){say('Сейчас идёт настоящий рендер — черепашка уже плывёт');return}
+ demoWaiting=!demoWaiting;
+ $('demoWait').textContent=demoWaiting?'Скрыть демо':'🌊 Демо ожидания';
+ $('jobProgress').classList.toggle('collapsed',!demoWaiting);
+ if(demoWaiting){
+  let amount=Number($('variants').value);
+  if(!Number.isInteger(amount)||amount<1||amount>48)amount=1;
+  $('jobStage').textContent='🌊 Демо: черепаха плавает, но GPU не запущен';
+  $('jobBar').value=0;renderWaiting(amount);
+ }
+};
 function stopJobPolling(){if(jobTimer){clearTimeout(jobTimer);jobTimer=null}}
 function scheduleJobRefresh(){
  stopJobPolling();
@@ -633,6 +645,9 @@ async function updateJob(){
  $('jobInfo').classList.remove('collapsed');
  $('jobInfo').textContent='Задание '+currentJob+' · '+job.status+' · '+(job.completed||0)+'/'+(job.total||0)+(job.error?'\n'+job.error:'');
  const busy=['running','queued'].includes(job.status);
+ activeRendering=busy;
+ demoWaiting=false;
+ $('demoWait').textContent='🌊 Демо ожидания';
  $('jobProgress').classList.toggle('collapsed',!busy);
  if(busy){
    $('jobStage').textContent='🌊 Не быстро, зато с погружением! · '+(job.stage||'Загрузка модели')+' · '+(job.progress||0)+'%';
@@ -684,7 +699,8 @@ $('generate').onclick=()=>task(async()=>{
     await saveNode();
     response=await api('/api/studio/projects/'+project.id+'/nodes/'+chosen+'/generate','POST',settings);
   }
-  currentJob=response.job_id;
+  currentJob=response.job_id;demoWaiting=false;activeRendering=true;
+  $('demoWait').textContent='🌊 Демо ожидания';
   $('jobInfo').classList.remove('collapsed');
   $('jobInfo').textContent='Задание '+currentJob+' принято';
   $('jobProgress').classList.remove('collapsed');

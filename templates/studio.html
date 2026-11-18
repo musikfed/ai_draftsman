@@ -179,10 +179,7 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
    <a href="https://github.com/musikfed/ai_draftsman/blob/main/docs/TRAINING_AND_MEMORY.md" target="_blank" rel="noopener noreferrer" style="color:var(--orange)">Модели, обучение и память — инструкция</a></div>
    <details><summary data-t="imageModels">Графическая модель (отдельно от LLM)</summary>
     <div class="toolbar"><button id="scanModels" data-t="scan">Найти веса на дисках</button><button id="downloadImage">Скачать выбранную SDXL</button><button id="imageStatus" data-t="downloadStatus">Статус загрузки</button></div>
-    <div id="modelDownloadArea" class="collapsed">
-     <div class="muted" id="modelDownloadCaption"></div>
-     <progress id="modelDownloadBar" max="100" value="0"></progress>
-    </div>
+    
     <pre id="modelInfo"></pre>
    </details>
   </div>
@@ -219,6 +216,10 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
 <div class="toolbar"><select id="imageCheckpoint" class="grow"><option value="illustrious-xl-v2">Illustrious XL 2.0</option></select>
 <button id="downloadSelected">⬇ Скачать модель</button></div>
 <div id="downloadStatusSmall" class="muted">Checkpoint устанавливается отдельно на /1tbdisk</div>
+    <div id="modelDownloadArea" class="collapsed">
+     <div class="muted" id="modelDownloadCaption"></div>
+     <progress id="modelDownloadBar" max="100" value="0"></progress>
+    </div>
 <div class="muted" id="modelRole">Ollama пишет промпты. SDXL рисует на GPU; LoRA помогает сохранять стиль.</div><div class="muted" id="variantsHint">Авто — из текста («сделай 7 вариантов»), либо введи 1–48.</div>
 <label data-t="strength">Сила img2img (0.15–0.90)</label><input id="strength" type="number" min=".15" max=".9" step=".05" value=".55">
    <label data-t="reference">Изображение-образец (только для img2img)</label><select id="reference"><option value="">Без референса</option></select>
@@ -257,7 +258,7 @@ const TR={
  be:{projects:'Праекты',newProject:'Новы праект',graph:'Рэдактар графа',inspector:'Рэдактар вузла',addNode:'Дадаць вузел',saveNode:'Захаваць вузел',generate:'Стварыць выяву',llmManager:'Мадэлі Ollama',downloadLLM:'Спампаваць LLM',projectSettings:'Налады праекта'}
 };
 let lang='ru', projects=[], project=null, nodes=[], edges=[], chosen=0, currentJob='';
-let currentMode='graph', jobTimer=null, demoWaiting=false, activeRendering=false;
+let currentMode='graph', jobTimer=null, modelDownloadTimer=null, demoWaiting=false, activeRendering=false;
 let busy=false;
 function say(s){$('message').textContent=String(s)}
 async function api(url,method='GET',data){
@@ -585,35 +586,80 @@ async function loadImageModels(){
  const current=select.value;
  let stored='';
  try{stored=localStorage.getItem('draftsman_checkpoint')||''}catch(e){}
- select.replaceChildren(...data.models.map(m=>
-  opt(m.id,m.title+(m.installed?' · установлена':' · скачать'))));
+ select.replaceChildren(...data.models.map(m=>{
+  const suffix=m.installed?' · установлена':
+    m.downloaded_bytes?' · докачать '+(m.downloaded_bytes/1024**3).toFixed(1)+' GiB':
+    ' · скачать (~6,94 ГБ)';
+  return opt(m.id,m.title+suffix);
+ }));
  const found=data.models.find(m=>m.id===stored)?.id
    ||data.models.find(m=>m.id===current)?.id||data.default;
  select.value=found;
  const chosen=data.models.find(m=>m.id===found);
  $('modelRole').textContent=(chosen.installed?'● Установлена':'○ Не скачана')+
   ' · '+chosen.family+' · '+chosen.title+
-  ' · графические веса на диске, не Ollama.';
+  ' · графические веса на /1tbdisk, не Ollama.';
 }
 $('imageCheckpoint').onchange=()=>task(async()=>{
  try{localStorage.setItem('draftsman_checkpoint',$('imageCheckpoint').value)}catch(e){}
  await loadImageModels();
 });
+$('downloadSelected').onclick=()=>$('downloadImage').click();
+function stopModelDownloadPolling(){
+ if(modelDownloadTimer){clearTimeout(modelDownloadTimer);modelDownloadTimer=null}
+}
+async function updateDownloadProgress(){
+ const state=await api('/api/models/download/status');
+ const running=state.status==='running';
+ const visible=state.status!=='idle';
+ $('modelDownloadArea').classList.toggle('collapsed',!visible);
+ const downloaded=Number(state.downloaded_bytes||0);
+ const total=Number(state.total_bytes||0);
+ const percent=total?Math.min(100,100*downloaded/total):Number(state.percent||0);
+ $('modelDownloadBar').value=percent;
+ const summary=(state.stage||state.status||'')+
+  (visible?' · '+percent.toFixed(1)+'%':'')+
+  (downloaded?' · '+(downloaded/1024**3).toFixed(2)+' GiB':'')+
+  (total?' / '+(total/1024**3).toFixed(2)+' GiB':'')+
+  (running&&state.speed_mib_s?' · '+state.speed_mib_s+' MiB/s':'');
+ $('modelDownloadCaption').textContent=summary;
+ $('downloadStatusSmall').textContent=visible?summary:
+     'Веса SDXL загружаются только по кнопке на /1tbdisk';
+ $('modelInfo').textContent=state.status==='failed'?
+     'Ошибка: '+(state.message||'Неизвестная ошибка')+' · повторная загрузка может продолжиться из .part':
+     (running?'Загрузка выполняется на Huananzhi':state.status==='completed'?
+       'Контрольная сумма SHA-256 проверена. Модель готова.':'');
+ stopModelDownloadPolling();
+ if(running){
+  modelDownloadTimer=setTimeout(async()=>{
+   if(document.hidden){stopModelDownloadPolling();return}
+   try{await updateDownloadProgress()}catch(e){say('Загрузка модели: '+e.message)}
+  },1800);
+ }else if(state.status==='completed'){
+  await loadImageModels();
+ }
+ return state;
+}
 $('downloadImage').onclick=()=>task(async()=>{
  const id=$('imageCheckpoint').value;
  const catalog=await api('/api/images/models');
  const model=catalog.models.find(m=>m.id===id);
  if(!model)throw Error('Выбери графическую модель');
- if(model.installed){say('Модель уже скачана: '+model.title);return}
- if(!confirm('Скачать '+model.title+' (~7 ГБ) на /1tbdisk?'))return;
+ if(model.installed){say('Модель уже присутствует на /1tbdisk: '+model.title);return}
+ const msg=model.downloaded_bytes?
+   'Продолжить загрузку '+model.title+' с '+(model.downloaded_bytes/1024**3).toFixed(2)+' GiB?':
+   'Скачать '+model.title+' (~6,94 ГБ) на /1tbdisk?';
+ if(!confirm(msg))return;
  const result=await api('/api/images/models/download','POST',{model:id});
- $('modelInfo').textContent='Загрузка: '+result.model+' · '+result.status;
- say('Графическая модель скачивается только по твоей команде.');
+ say('Загрузка '+result.model+' запущена на Huananzhi');
+ await updateDownloadProgress();
 });
-$('imageStatus').onclick=()=>task(async()=>{
- const state=await api('/api/models/download/status');
- $('modelInfo').textContent=JSON.stringify(state,null,2);
- if(state.status==='completed')await loadImageModels();
+$('imageStatus').onclick=()=>task(updateDownloadProgress);
+document.addEventListener('visibilitychange',()=>{
+ if(!document.hidden&&modelDownloadTimer===null)task(async()=>{
+  const st=await api('/api/models/download/status');
+  if(st.status==='running')await updateDownloadProgress();
+ });
 });
 $('uploadReference').onclick=()=>task(async()=>{
  const f=$('referenceFile').files[0];if(!f)throw Error('Выбери PNG/JPEG/WEBP');
@@ -798,6 +844,7 @@ async function startup(){
   $('quickNegative').value=remembered.negative_prompt||'';
   try{switchMode(localStorage.getItem('draftsman_mode')||'quick')}catch(e){switchMode('quick')}
   await Promise.all([loadProjects(),refreshResources(),loadImageModels()]);
+  await updateDownloadProgress();
   for(const id of ['variants','resolution','seed','steps','cfg','strength','renderMode']){
    try{
     const saved=localStorage.getItem('draftsman_setting_'+id);

@@ -34,6 +34,13 @@ def download_checkpoint(model_id: str, progress: Callable[[dict], None]) -> Path
         raise RuntimeError("Existing checkpoint hash differs from official SHA-256. No files deleted.")
 
     current = partial.stat().st_size if partial.is_file() else 0
+    if 6_500_000_000 <= current <= expected_size * 1.05:
+        progress({"stage": "Проверка докачанного файла", "downloaded_bytes": current})
+        if _digest(partial) == expected_sha:
+            partial.replace(path)
+            progress({"stage": "Скачано и проверено", "downloaded_bytes": current,
+                      "total_bytes": current, "percent": 100, "speed_mib_s": 0})
+            return path
     if current > expected_size * 1.05:
         raise RuntimeError("Partial checkpoint is unexpectedly large; inspect the .part file")
     free = shutil.disk_usage(path.parent).free
@@ -65,13 +72,11 @@ def download_checkpoint(model_id: str, progress: Callable[[dict], None]) -> Path
             raise RuntimeError(f"Unexpected checkpoint HTTP status {code}")
 
         downloaded = current
-        total = expected_size
-        if response.headers.get("Content-Length"):
-            server_length = int(response.headers["Content-Length"])
-            if server_length > 0:
-                total = current + server_length
-        if not (6_500_000_000 <= total <= 8_000_000_000):
-            raise RuntimeError(f"Unexpected model download size ({total} bytes); refusing file")
+        header_length = response.headers.get("Content-Length")
+        total = current + int(header_length) if header_length else None
+        progress_total = total if total else expected_size
+        if not (6_500_000_000 <= progress_total <= 8_000_000_000):
+            raise RuntimeError(f"Unexpected model download size ({progress_total} bytes); refusing file")
 
         started = time.monotonic()
         previous = started
@@ -81,7 +86,7 @@ def download_checkpoint(model_id: str, progress: Callable[[dict], None]) -> Path
                 if not chunk:
                     continue
                 downloaded += len(chunk)
-                if downloaded > total + _CHUNK:
+                if downloaded > progress_total + 100 * 1024 * 1024:
                     raise RuntimeError("Checkpoint larger than expected")
                 output.write(chunk)
                 now = time.monotonic()
@@ -90,23 +95,23 @@ def download_checkpoint(model_id: str, progress: Callable[[dict], None]) -> Path
                     progress({
                         "stage": "Скачивание весов SDXL",
                         "downloaded_bytes": downloaded,
-                        "total_bytes": total,
-                        "percent": round(100 * downloaded / total, 1),
+                        "total_bytes": progress_total,
+                        "percent": min(99.9, round(100 * downloaded / progress_total, 1)),
                         "speed_mib_s": round((downloaded - initial) / elapsed / 1024**2, 2),
                     })
                     previous = now
             output.flush()
 
-    if downloaded != total:
-        raise RuntimeError(f"File incomplete: received {downloaded} of {total} bytes")
+    if (total is not None and downloaded != total) or downloaded < 6_500_000_000:
+        raise RuntimeError(f"File incomplete: received {downloaded} bytes, expected {total}")
     progress({"stage": "Проверка SHA-256", "downloaded_bytes": downloaded,
-              "total_bytes": total, "percent": 99.9})
+              "total_bytes": downloaded, "percent": 99.9})
     if _digest(partial) != expected_sha:
         partial.unlink(missing_ok=True)  # Only our own corrupt temporary download
         raise RuntimeError("SHA-256 mismatch. Temporary corrupt file discarded.")
     partial.replace(path)
     progress({"stage": "Скачано и проверено", "downloaded_bytes": downloaded,
-              "total_bytes": total, "percent": 100, "speed_mib_s": 0})
+              "total_bytes": downloaded, "percent": 100, "speed_mib_s": 0})
     return path
 
 

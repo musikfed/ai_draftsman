@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import subprocess
 import time
+from pathlib import Path
 import psutil
 
 
@@ -151,18 +152,57 @@ def _studio_processes(worker_pid: int | None, gpu_processes: list[dict]) -> list
     return sorted(rows, key=lambda p: (priority.get(p["role"], 9), -p["ram_mib"]))[:18]
 
 
+def physical_cpu_snapshot(logical_percent: list[float]) -> list[dict]:
+    """Aggregate logical CPU utilization by actual physical socket, not cores.
+
+    Linux exposes physical_package_id in sysfs. If sysfs is unavailable,
+    /proc/cpuinfo is consulted. Never invent a second CPU/socket.
+    """
+    packages: dict[int, list[float]] = {}
+    cpuinfo: dict[int, int] = {}
+    try:
+        current_cpu = None
+        for line in Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                current_cpu = None
+            elif line.startswith("processor") and ":" in line:
+                current_cpu = int(line.split(":", 1)[1].strip())
+            elif line.startswith("physical id") and ":" in line and current_cpu is not None:
+                cpuinfo[current_cpu] = int(line.split(":", 1)[1].strip())
+    except (OSError, ValueError):
+        pass
+    for logical_id, percent in enumerate(logical_percent):
+        try:
+            package = int(Path(
+                f"/sys/devices/system/cpu/cpu{logical_id}/topology/physical_package_id"
+            ).read_text(encoding="ascii").strip())
+        except (OSError, ValueError):
+            package = cpuinfo.get(logical_id, 0)
+        packages.setdefault(package, []).append(percent)
+    return [
+        {"package_id": package, "label": f"CPU {index}",
+         "percent": round(sum(values) / len(values), 1),
+         "threads": len(values)}
+        for index, (package, values) in enumerate(sorted(packages.items()), start=1)
+        if values
+    ]
+
+
 def collect_snapshot(active_job: dict | None = None) -> dict:
     # All expensive samples happen only for explicit monitor refresh or while open
     # during active image rendering; never use always-on background collectors.
-    psutil.cpu_percent(interval=None)
+    psutil.cpu_percent(interval=None, percpu=True)
     gpu = gpu_snapshot()
     worker_pid = (active_job or {}).get("pid")
     process_rows = _studio_processes(worker_pid, gpu.get("processes", []))
-    cpu = psutil.cpu_percent(interval=None)
+    logical_cpu = psutil.cpu_percent(interval=None, percpu=True)
+    sockets = physical_cpu_snapshot(logical_cpu)
+    cpu = round(sum(logical_cpu) / len(logical_cpu), 1) if logical_cpu else None
     ram = psutil.virtual_memory()
     swap = psutil.swap_memory()
     return {
-        "cpu": {"percent": cpu, "logical_threads": psutil.cpu_count(logical=True),
+        "cpu": {"percent": cpu, "sockets": sockets,
+                "logical_threads": psutil.cpu_count(logical=True),
                 "physical_cores": psutil.cpu_count(logical=False),
                 "load_average": [round(x, 2) for x in os.getloadavg()]},
         "ram": {"total_mib": _mib(ram.total),

@@ -37,6 +37,12 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
 #processMonitor th,#processMonitor td{padding:7px 8px;border-bottom:1px solid #2b415c;white-space:nowrap}
 #processMonitor th{color:var(--muted);font-weight:500}
 #monitorPeaks{margin:8px 0;color:#b8d7f0}
+.monitor-auto-label{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.monitor-auto-label input{width:auto;accent-color:var(--orange)}
+#headerMetrics{font-variant-numeric:tabular-nums}
+.status.monitor-warn{border-color:#c18e47;color:#ffca78}
+.status.monitor-alert{border-color:#ca6676;color:#ff9aa9}
+@media(max-width:700px){#headerMetrics{font-size:11px}}
 #modelDownloadArea{margin:7px 0;border:1px solid var(--line);border-radius:8px;padding:9px;background:var(--field)}
 #modelDownloadArea progress{width:100%;accent-color:var(--orange)}
 
@@ -102,16 +108,17 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
 <header>
  <div><div class="brand">PEGINELAB <b>AI Draftsman</b></div><div class="sub" data-t="subtitle">Универсальная локальная ИИ-студия · любой проект и граф</div></div>
  <div class="toolbar"><select id="lang" aria-label="Language"></select>
- <span id="gpu" class="status">RTX 3060</span>
- <span id="workerIndicator" class="status"><i class="dot"></i> GPU worker</span>
- <span id="ollamaIndicator" class="status"><i class="dot"></i> Ollama</span>
+ <span id="gpu" class="status" title="Температура, нагрузка GPU и занятая VRAM">GPU · —</span>
+ <span id="workerIndicator" class="status" title="Состояние движка генерации"><i class="dot"></i> GPU worker · —</span>
+ <span id="ollamaIndicator" class="status" title="Доступность Ollama API"><i class="dot"></i> Ollama · —</span>
+ <span id="headerMetrics" class="status" aria-live="off">GPU —% · VRAM —</span>
  <button id="refreshStatus">↻</button>
  <button id="freeVram" data-t="freeVRAM">Освободить VRAM</button>
  <button id="powerOff" class="danger" data-t="stopStudio">ВЫКЛ студию</button></div>
 </header>
 <main>
 <details class="panel" id="monitorPanel"><summary data-t="monitor">Мониторинг Huananzhi (по нажатию, без фонового опроса)</summary>
- <div style="margin-top:10px" class="toolbar"><button id="updateMetrics" data-t="update">↻ Обновить показатели</button><span class="muted" data-t="statsInfo">CPU · RAM · VRAM · SWAP · Zombie · реальные диски</span></div>
+ <div style="margin-top:10px" class="toolbar"><button id="updateMetrics" data-t="update">↻ Обновить показатели</button><label class="muted monitor-auto-label"><input type="checkbox" id="autoMonitor"> Автообновление (10 с, только при открытой панели)</label><span id="monitorUpdated" class="muted" role="status">Замер ещё не выполнен</span><span class="muted" data-t="statsInfo">CPU · RAM · VRAM · SWAP · Zombie · реальные диски</span></div>
  <div id="systemMetrics"></div>
  <div id="monitorPeaks" class="muted">Пиковые показания после открытия страницы: ещё нет замеров</div>
  <h3>Потребление по процессам</h3>
@@ -458,12 +465,30 @@ function renderProcesses(rows, gpuProcesses){
              (p.vram_mib==null?'VRAM неизвестна':fmt(p.vram_mib))).join('; '):
    'Время выполнения и VRAM выводятся только для обнаруженных вычислительных процессов GPU.';
 }
+let statusPending=false;
+let lastStatusTime=0;
 async function status(){
+ if(statusPending)return;
+ statusPending=true;
+ try{
  const s=await api('/api/status');
+ lastStatusTime=Date.now();
  const g=s.gpu?.devices?.[0];
- $('gpu').textContent=g?'RTX 3060 · '+g.temperature_c+'°C':'GPU unavailable';
- $('workerIndicator').classList.toggle('on',Boolean(s.engine_ready));
+ $('gpu').textContent=g?(g.name+' · '+(g.temperature_c??'—')+'°C'):'GPU недоступен';
+ const busy=Boolean(s.engine_busy),ready=Boolean(s.engine_ready);
+ $('workerIndicator').classList.toggle('on',busy||ready);
+ $('workerIndicator').textContent='● GPU worker · '+(busy?'генерация':ready?'готов':'не готов');
+ $('workerIndicator').title=busy?'Сейчас выполняется генерация':ready?'Движок установлен и готов к запуску':'Движок или checkpoint недоступен';
  $('ollamaIndicator').classList.toggle('on',Boolean(s.ollama_online));
+ $('ollamaIndicator').textContent='● Ollama · '+(s.ollama_online?'онлайн':'недоступна');
+ $('headerMetrics').textContent=g
+   ?'GPU '+(g.utilization_percent??'—')+'% · VRAM '+fmt(g.vram_used_mib)+' / '+fmt(g.vram_total_mib)
+   :'GPU — · VRAM —';
+ for(const id of ['gpu','headerMetrics']){
+   $(id).classList.toggle('monitor-warn',Boolean(g&&g.temperature_c>=78&&g.temperature_c<85));
+   $(id).classList.toggle('monitor-alert',Boolean(g&&g.temperature_c>=85));
+ }
+ $('monitorUpdated').textContent='Замер '+new Date(lastStatusTime).toLocaleTimeString()+' · вручную или по запросу';
  const c=s.cpu,r=s.ram,sw=s.swap,z=s.zombies;
  $('systemMetrics').replaceChildren(
   meter('CPU хоста',c.percent+'%',c.percent,
@@ -487,11 +512,34 @@ async function status(){
  $('disks').replaceChildren(...s.disks.map(d=>meter(d.mount,d.percent+'%',d.percent,
      fmt(d.used_mib)+' занято · '+fmt(d.free_mib)+' свободно · '+d.device)));
  $('zombies').textContent=z.count?z.examples.map(x=>x.pid+' ← '+x.ppid+' '+x.name).join(', '):'Зомби нет';
+ }catch(error){
+   $('monitorUpdated').textContent='Нет связи с мониторингом · '+new Date().toLocaleTimeString();
+   $('gpu').textContent='GPU · нет связи';
+   $('workerIndicator').textContent='● GPU worker · неизвестно';
+   $('ollamaIndicator').textContent='● Ollama · неизвестно';
+   $('workerIndicator').classList.remove('on');
+   $('ollamaIndicator').classList.remove('on');
+   $('headerMetrics').textContent='Метрики недоступны';
+   throw error;
+ }finally{statusPending=false}
 }
 $('updateMetrics').onclick=()=>task(status);
 $('refreshStatus').onclick=()=>task(status);
+let monitorTimer=null;
+function syncMonitorTimer(){
+ if(monitorTimer!==null){clearInterval(monitorTimer);monitorTimer=null}
+ if($('monitorPanel').open&&!document.hidden&&$('autoMonitor').checked){
+   monitorTimer=setInterval(()=>{if(!statusPending)task(status)},10000);
+ }
+}
 $('monitorPanel').addEventListener('toggle',()=>{
  if($('monitorPanel').open)task(status);
+ syncMonitorTimer();
+});
+$('autoMonitor').addEventListener('change',syncMonitorTimer);
+document.addEventListener('visibilitychange',()=>{
+ syncMonitorTimer();
+ if(!document.hidden&&$('monitorPanel').open)task(status);
 });
 $('powerOff').onclick=()=>task(async()=>{
  if(!confirm('Выключить только Flask-студию? Ollama и GPU-задания не трогать?'))return;

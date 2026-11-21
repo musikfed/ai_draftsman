@@ -139,10 +139,14 @@ def register(app, connection, data_source, ollama_url, ollama_model, current_job
             where.append("d.archived=1")
         args=[min_rating]
         if query:
-            where.append("""(d.title LIKE ? OR d.prompt LIKE ? OR
-                d.negative_prompt LIKE ? OR d.prompt_ru LIKE ? OR
-                d.negative_prompt_ru LIKE ? OR d.note LIKE ?)""")
-            args.extend(["%"+query+"%"]*6)
+            if re.fullmatch(r"#[0-9]{1,9}",query):
+                where.append("d.id=?")
+                args.append(int(query[1:]))
+            else:
+                where.append("""(d.title LIKE ? OR d.prompt LIKE ? OR
+                    d.negative_prompt LIKE ? OR d.prompt_ru LIKE ? OR
+                    d.negative_prompt_ru LIKE ? OR d.note LIKE ?)""")
+                args.extend(["%"+query+"%"]*6)
         if has_images:
             where.append("EXISTS(SELECT 1 FROM quick_draft_jobs j WHERE j.draft_id=d.id)")
         clause=" AND ".join(where)
@@ -419,6 +423,8 @@ def register(app, connection, data_source, ollama_url, ollama_model, current_job
         row=lookup(draft_id)
         if not row:
             return {"error":"Draft not found"},404
+        if row["archived"]:
+            return {"status":"read_only","note":"Archived drafts are immutable"},200
         if try_existing_translation(draft_id,row):
             return {"status":"ready","cached":True},200
         def already_russian(text):

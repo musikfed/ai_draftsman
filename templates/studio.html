@@ -83,7 +83,7 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
  background:radial-gradient(ellipse at 20% 20%,#a0f3e431,transparent 50%),
  radial-gradient(ellipse at 70% 50%,#49c7d526,transparent 65%);
  animation:underwater-current 11s ease-in-out infinite alternate;pointer-events:none}
-.wait-turtle{display:block;width:clamp(140px,88%,230px);height:160px;max-width:95%;
+.wait-turtle{display:block;width:clamp(96px,85%,170px);height:128px;max-width:90%;
  object-fit:contain;position:relative;z-index:2;pointer-events:none;
  filter:drop-shadow(0 8px 9px #0013278c);transform-origin:50% 56%;
  animation:sea-turtle-swim 9s ease-in-out infinite}
@@ -908,7 +908,7 @@ function renderWaiting(total,completed=0){
   for(let i=0;i<visible;i++){
    const card=document.createElement('div');card.className='wait-slot';
    const turtle=document.createElement('img');turtle.className='wait-turtle';
-   turtle.src='/static/images/sea-turtle-swim.svg';turtle.alt='';
+   turtle.src='/static/images/sea-turtle.webp';turtle.alt='';
    turtle.width=230;turtle.height=160;turtle.decoding='async';
    turtle.setAttribute('aria-hidden','true');card.append(turtle);
    const caption=document.createElement('span');caption.className='wait-caption';card.append(caption);

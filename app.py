@@ -593,7 +593,10 @@ def prompt_gallery():
 @app.post("/api/quick/generate")
 def quick_generate():
     """Direct txt2img/img2img. No project, graph or approved node required."""
-    data = request.get_json(silent=True) or {}
+    return create_quick_generation(request.get_json(silent=True) or {})
+
+
+def create_quick_generation(data):
     prompt = str(data.get("prompt") or "").strip()
     negative_prompt = str(data.get("negative_prompt") or "").strip()
     if not prompt or len(prompt) > 16000 or len(negative_prompt) > 4000:
@@ -647,10 +650,28 @@ def quick_generate():
     }
     # Archive once even when the user clicks Generate without pressing Save.
     with connection() as db:
-        saved=db.execute("""SELECT id FROM quick_draft_history
-            WHERE prompt=? AND negative_prompt=? ORDER BY id DESC LIMIT 1""",
-            (prompt,negative_prompt)).fetchone()
-        draft_id=saved["id"] if saved else archive_quick_draft(db,prompt,negative_prompt)
+        parent_id=data.get("_fork_from")
+        if parent_id is not None:
+            try:
+                parent_id=int(parent_id)
+            except (TypeError,ValueError):
+                return jsonify(error="Invalid source draft"),400
+            original=db.execute("""SELECT id,title,prompt_ru,negative_prompt_ru
+                FROM quick_draft_history WHERE id=?""",(parent_id,)).fetchone()
+            if original is None:
+                return jsonify(error="Source draft not found"),404
+            base_title=(original["title"] or prompt[:60]).strip()
+            title=(base_title+" · перегенерация")[:140]
+            draft_id=db.execute("""INSERT INTO quick_draft_history
+                (prompt,negative_prompt,title,prompt_ru,negative_prompt_ru,parent_draft_id)
+                VALUES(?,?,?,?,?,?)""",
+                (prompt,negative_prompt,title,original["prompt_ru"],
+                 original["negative_prompt_ru"],parent_id)).lastrowid
+        else:
+            saved=db.execute("""SELECT id FROM quick_draft_history
+                WHERE prompt=? AND negative_prompt=? AND archived=0
+                ORDER BY id DESC LIMIT 1""",(prompt,negative_prompt)).fetchone()
+            draft_id=saved["id"] if saved else archive_quick_draft(db,prompt,negative_prompt)
     spec["draft_id"]=draft_id
     try:
         job_id = submit_job(spec)
@@ -720,6 +741,44 @@ def job_image(job_id,variant):
             if img.parent==folder and img.is_file():
                 return send_file(img,mimetype="image/png")
     return jsonify(error="Image is not ready"),404
+
+
+@app.post("/api/quick/catalog/<int:draft_id>/regenerate")
+def regenerate_saved_draft(draft_id):
+    """Fork a version and launch one GPU variant without modifying its source."""
+    with connection() as db:
+        draft=db.execute("""SELECT prompt,negative_prompt FROM quick_draft_history
+            WHERE id=?""",(draft_id,)).fetchone()
+        if draft is None:
+            return jsonify(error="Draft not found"),404
+        linked=db.execute("""SELECT job_id FROM quick_draft_jobs
+            WHERE draft_id=? ORDER BY rowid DESC LIMIT 1""",(draft_id,)).fetchone()
+    previous={}
+    if linked:
+        path=(DATA/"jobs"/linked["job_id"]/"spec.json").resolve()
+        if path.parent==(DATA/"jobs"/linked["job_id"]).resolve() and path.is_file():
+            try:
+                previous=json.loads(path.read_text(encoding="utf-8"))
+            except (OSError,ValueError):
+                previous={}
+    source_ref=str(previous.get("reference") or "")
+    mode=str(previous.get("mode") or "txt2img")
+    requested=request.get_json(silent=True) or {}
+    use_same_seed=requested.get("seed_mode")=="same"
+    payload={
+        "prompt":draft["prompt"],"negative_prompt":draft["negative_prompt"],
+        "checkpoint":previous.get("checkpoint") or DEFAULT_CHECKPOINT,
+        "mode":mode if mode in ("img2img","txt2img") else "txt2img",
+        "reference":Path(source_ref).name if source_ref else "",
+        "variants":1,  # never silently generate 48 variants on re-run
+        "seed":previous.get("seed",0) if use_same_seed else 0,
+        "steps":previous.get("steps",28),"cfg":previous.get("cfg",6.5),
+        "width":previous.get("width",768),"height":previous.get("height",960),
+        "strength":previous.get("strength",0.55),
+        "lora":previous.get("lora",""),
+        "_fork_from":draft_id
+    }
+    return create_quick_generation(payload)
 
 
 # One Flask process, no second service: cached auto translation runs only while GPU idle.

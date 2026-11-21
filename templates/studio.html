@@ -156,6 +156,17 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
     <button id="saveQuick" class="primary">Сохранить черновик</button>
    </div>
    <p class="muted">Черновик хранится в SQLite. Готовые изображения и параметры задания хранятся на сервере.</p>
+   <details id="draftHistoryPanel" style="margin-top:12px">
+    <summary>Библиотека черновиков · сохранённые версии и перевод на русский</summary>
+    <p class="muted">При каждом отличающемся сохранении создаётся версия. Перевод через локальную Ollama — только по кнопке.</p>
+    <div class="toolbar">
+     <select id="draftHistorySelect" class="grow" aria-label="Выбор сохранённого черновика"></select>
+     <button id="openDraft">Загрузить в поля</button>
+     <button id="translateDraft">Перевести на русский</button>
+     <button id="refreshDrafts">↻ Список</button>
+    </div>
+    <pre id="draftHistoryPreview" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow-y:auto" aria-live="polite"></pre>
+   </details>
   </div>
   <div class="panel">
    <h2 data-t="projects">Проекты</h2>
@@ -243,9 +254,10 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
 <div class="muted" id="modelRole">Ollama пишет промпты. SDXL рисует на GPU; LoRA помогает сохранять стиль.</div><div class="muted" id="variantsHint">Авто — из текста («сделай 7 вариантов»), либо введи 1–48.</div>
 <label data-t="strength">Сила img2img (0.15–0.90)</label><input id="strength" type="number" min=".15" max=".9" step=".05" value=".55">
    <label data-t="reference">Изображение-образец (только для img2img)</label><select id="reference"><option value="">Без референса</option></select>
-   <div class="toolbar"><input id="referenceFile" type="file" accept=".jpg,.jpeg,.png,.webp" class="grow"><button id="uploadReference" data-t="upload">Добавить образец</button></div>
+   <div class="toolbar"><input id="referenceFile" type="file" accept=".jpg,.jpeg,.png,.webp" class="grow"><button id="uploadReference" data-t="upload">Добавить образец</button><button id="deleteReference" class="danger">Удалить образец</button></div>
+   <div id="referenceHint" class="muted">Для img2img выбери файл и нажми «Добавить образец».</div>
    <label>SDXL LoRA</label><select id="lora"><option value="">Без LoRA</option></select>
-   <div class="toolbar" style="margin-top:10px"><button id="generate" class="primary" data-t="generate">Генерировать</button><button id="checkJob" data-t="checkJob">Проверить результат</button><button id="demoWait">🌊 Демо ожидания</button></div>
+   <div class="toolbar" style="margin-top:10px"><button id="generate" class="primary" data-t="generate">Генерировать</button><button id="checkJob" data-t="checkJob">Проверить результат</button><button id="demoWait">🌊 Демо ожидания</button><button id="resetRenderSettings">↺ Сбросить параметры</button></div>
    <div id="jobProgress" class="collapsed"><div class="muted" id="jobStage">Загрузка модели</div><progress id="jobBar" max="100" value="0"></progress><div id="waitGrid" class="wait-grid"></div></div>
    <pre id="jobInfo" class="collapsed"></pre><div id="previews"></div>
    <details><summary>История генераций — сохраняется после F5</summary>

@@ -72,6 +72,26 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
 .mode-tabs{margin:0 0 12px}.mode-tabs button.chosen{background:#ba5f18;border-color:#f2a248}
 .cols.quick #projectColumn>.panel:not(#quickSection){display:none}
 .cols.quick #nodeInspector,.cols.quick #projectKnowledge{display:none}
+.cols.results{grid-template-columns:1fr}
+.cols.results #sideColumn{display:none}
+.cols.results #projectColumn>.panel:not(#resultsSection){display:none}
+#quickSection.collapsed,#resultsSection.collapsed{display:none!important}
+.quick-shelf{border:1px solid var(--line);border-radius:8px;margin:8px 0 15px;padding:9px;background:#0f2035}
+.quick-shelf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-top:8px}
+.quick-shelf-grid a{display:block;min-width:0}
+.quick-shelf-grid img{width:100%;height:100px;object-fit:contain;background:#08162a;border-radius:5px}
+.quick-shelf-grid .shelf-title{font-size:10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.results-controls{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.results-controls input{flex:2 1 240px}
+.results-controls select{flex:1 1 120px}
+.results-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:11px}
+.result-card{border:1px solid var(--line);background:#0e1e33;border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px}
+.result-card>img{width:100%;height:220px;object-fit:contain;background:#071323;border-radius:6px}
+.result-card strong{font-size:13px;overflow-wrap:anywhere}
+.result-card .result-sub{font-size:11px;color:var(--muted)}
+.result-card .result-actions{display:flex;gap:5px;flex-wrap:wrap}
+.result-card .result-actions button{font-size:11px}
+.result-card.archived{opacity:.84}
 #quickSection textarea{min-height:115px}
 .wait-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:10px 0}
 .wait-grid.single{grid-template-columns:minmax(0,1fr)}
@@ -147,12 +167,16 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
  <div id="disks"></div><div class="muted" id="zombies"></div>
  </details>
 </details>
-<div class="toolbar mode-tabs"><button id="quickTab" class="chosen">⚡ Быстрый рисунок — без графа</button><button id="graphTab">◈ Проекты и граф</button><span class="muted">Нейросеть рисует на сервере, Ollama помогает составить промпт</span></div>
+<div class="toolbar mode-tabs"><button id="quickTab" class="chosen">⚡ Быстрый рисунок</button><button id="resultsTab">▣ Результаты</button><button id="graphTab">◈ Проекты и граф</button><span class="muted">Нейросеть рисует на сервере, Ollama помогает составить промпт</span></div>
 <div class="cols" id="workArea">
  <section id="projectColumn">
   <div id="quickSection" class="panel collapsed">
    <h2>Быстрая генерация без проекта</h2>
    <p class="muted">Описывай любую картинку. Граф, узлы и утверждение не нужны. По образцу — выбери img2img справа.</p>
+   <div class="quick-shelf">
+    <div class="toolbar"><strong>Последние эскизы</strong><span class="muted">Оригинальные PNG, без копий на диске</span><button id="openResults">Все результаты</button></div>
+    <div id="quickShelfGrid" class="quick-shelf-grid"></div>
+   </div>
    <label for="quickPrompt">Что нарисовать — положительный промпт</label>
    <textarea id="quickPrompt" placeholder="Например: пушистый рыжий котёнок на зимнем подоконнике, мягкий свет, выразительная иллюстрация"></textarea>
    <label for="quickNegative">Чего не должно быть — негативный промпт</label>
@@ -190,12 +214,26 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
      <div id="catalogDetail" class="catalog-detail">Выбери черновик слева, чтобы увидеть оба промпта и связанные изображения.</div>
     </div>
    </details>
-   <details id="promptExamplesPanel" style="margin-top:12px">
+   <details id="promptExamplesPanel" style="display:none" aria-hidden="true">
     <summary>Каталог промптов с реальными примерами изображений</summary>
     <p class="muted">Здесь только уже созданные картинки и точные параметры их генерации. По одному тексту воспроизведение не гарантируется; для сравнения нужен фиксированный Seed и тот же checkpoint.</p>
     <button id="refreshPromptExamples">↻ Обновить каталог</button>
     <div id="promptGallery" class="prompt-gallery"></div>
    </details>
+  </div>
+  <div id="resultsSection" class="panel collapsed">
+   <h2>▣ Результаты генерации</h2>
+   <p class="muted">Каждый эскиз имеет постоянный индекс, название и связь с черновиком. Кнопка «Перегенерировать» создаёт новую версию; старые рисунки не удаляются.</p>
+   <div class="results-controls">
+    <input id="resultsSearch" placeholder="Найти по названию или тексту промпта..." aria-label="Поиск результатов">
+    <select id="resultsSort"><option value="newest">Сначала новые</option><option value="oldest">Сначала старые</option><option value="rating">По оценке</option></select>
+    <select id="resultsArchive"><option value="all">Все</option><option value="active">Активные</option><option value="archived">Архив</option></select>
+    <button id="resultsRefresh">↻ Обновить</button>
+   </div>
+   <div id="resultsGrid" class="results-grid"></div>
+   <div class="catalog-pager">
+    <button id="resultsPrev">← Назад</button><span id="resultsPage" class="catalog-meta"></span><button id="resultsNext">Вперёд →</button>
+   </div>
   </div>
   <div class="panel">
    <h2 data-t="projects">Проекты</h2>
@@ -879,15 +917,20 @@ $('resetRenderSettings').onclick=()=>{
 };
 
 function switchMode(next){
- currentMode=next==='quick'?'quick':'graph';
+ currentMode=['quick','graph','results'].includes(next)?next:'quick';
  $('workArea').classList.toggle('quick',currentMode==='quick');
+ $('workArea').classList.toggle('results',currentMode==='results');
  $('quickSection').classList.toggle('collapsed',currentMode!=='quick');
+ $('resultsSection').classList.toggle('collapsed',currentMode!=='results');
  $('quickTab').classList.toggle('chosen',currentMode==='quick');
+ $('resultsTab').classList.toggle('chosen',currentMode==='results');
  $('graphTab').classList.toggle('chosen',currentMode==='graph');
  if(currentMode==='graph')renderGraph();
  try{localStorage.setItem('draftsman_mode',currentMode)}catch(e){}
 }
 $('quickTab').onclick=()=>switchMode('quick');
+$('resultsTab').onclick=()=>switchMode('results');
+$('openResults').onclick=()=>switchMode('results');
 $('graphTab').onclick=()=>switchMode('graph');
 async function refreshPromptExamples(){
  const response=await api('/api/prompt-gallery'),items=response.examples||[],panel=$('promptGallery');
@@ -1184,4 +1227,4 @@ restorePageSettings();
 translate();
 startup().catch(e=>say(e.message));
 
-</script><script src="/static/js/draft_catalog.js"></script></body></html>
+</script><script src="/static/js/draft_catalog.js"></script><script src="/static/js/results_catalog.js"></script></body></html>

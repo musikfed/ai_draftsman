@@ -1003,6 +1003,15 @@ async function refreshJobHistory(restore){
    await updateJob();
  }
 }
+function conflictingPromptRules(positive,negative){
+ const p=positive.toLowerCase(),n=negative.toLowerCase();
+ const rules=[
+  [/comic|манг|комикс/,/no (?:comic|manga)|no comic book panels|без комикс|без манг/,'комикс / манга'],
+  [/terminal|code|linux|computer|техно|терминал/,/no tech elements|no linux logos|no linux symbols|without technology|без технолог|без терминал/,'технические элементы'],
+  [/martial arts|karate|карате/,/no martial arts|no karate|без карате/,'карате']
+ ];
+ return rules.filter(([a,b])=>a.test(p)&&b.test(n)).map(x=>x[2]);
+}
 $('generate').onclick=()=>task(async()=>{
  $('generate').disabled=true;
  try{
@@ -1025,6 +1034,9 @@ $('generate').onclick=()=>task(async()=>{
     const prompt=$('quickPrompt').value.trim();
     if(!prompt)throw Error('Напиши, что нужно нарисовать');
     const negative_prompt=$('quickNegative').value;
+    const conflicts=conflictingPromptRules(prompt,negative_prompt);
+    if(conflicts.length&&!confirm('ПРОТИВОРЕЧИЕ: негативный промпт запрещает то, что запрошено в положительном ('+
+     conflicts.join(', ')+'). Исправить перед запуском? Нажми ОК для отмены или Отмена, чтобы продолжить генерацию.'))return;
     const d=await api('/api/quick/draft/saved','PUT',{prompt,negative_prompt});
     await refreshDraftLibrary(d.draft_id);
     response=await api('/api/quick/generate','POST',{...settings,prompt,negative_prompt});

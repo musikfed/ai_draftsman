@@ -975,6 +975,7 @@ async function refreshPromptExamples(){
    $('quickPrompt').value=example.prompt;
    $('quickNegative').value=example.negative_prompt;
    rememberSetting('quickPrompt');rememberSetting('quickNegative');
+   $('quickPrompt').dispatchEvent(new Event('input'));
    const fields={seed:String(example.seed),steps:String(example.steps),cfg:String(example.cfg),
     variants:'1',resolution:example.width+'x'+example.height,strength:String(example.strength)};
    for(const [id,value] of Object.entries(fields)){
@@ -1032,6 +1033,7 @@ $('openDraft').onclick=()=>task(async()=>{
  const d=await api('/api/quick/drafts/'+encodeURIComponent(id));
  $('quickPrompt').value=d.prompt;$('quickNegative').value=d.negative_prompt;
  rememberSetting('quickPrompt');rememberSetting('quickNegative');
+ document.dispatchEvent(new CustomEvent('draftsman:draft-restored',{detail:{draft_id:d.id}}));
  say('Черновик #'+id+' восстановлен без запуска генерации');
 });
 $('translateDraft').onclick=()=>task(async()=>{
@@ -1046,6 +1048,7 @@ $('saveQuick').onclick=()=>task(async()=>{
  const d=await api('/api/quick/draft/saved','PUT',
   {prompt:$('quickPrompt').value,negative_prompt:$('quickNegative').value,auto_translate:true});
  await refreshDraftLibrary(d.draft_id);
+ document.dispatchEvent(new CustomEvent('draftsman:draft-saved',{detail:{draft_id:d.draft_id}}));
  say('Черновик #'+d.draft_id+' сохранён в SQLite');
 });
 $('quickDraftAI').onclick=()=>task(async()=>{
@@ -1057,6 +1060,7 @@ $('quickDraftAI').onclick=()=>task(async()=>{
  const d=await api('/api/quick/draft/saved','PUT',
   {prompt:result.prompt,negative_prompt:result.negative_prompt||'',auto_translate:true});
  await refreshDraftLibrary(d.draft_id);
+ document.dispatchEvent(new CustomEvent('draftsman:draft-saved',{detail:{draft_id:d.draft_id}}));
  say('Промпт подготовлен и сохранён — проверь перед генерацией');
 });
 function renderWaiting(total,completed=0){
@@ -1197,6 +1201,7 @@ $('generate').onclick=()=>task(async()=>{
      ', хотя положительный их запрашивает. Продолжить генерацию несмотря на противоречие?'))return;
     const d=await api('/api/quick/draft/saved','PUT',{prompt,negative_prompt});
     await refreshDraftLibrary(d.draft_id);
+    document.dispatchEvent(new CustomEvent('draftsman:draft-saved',{detail:{draft_id:d.draft_id}}));
     response=await api('/api/quick/generate','POST',{...settings,prompt,negative_prompt});
   }else{
     if(!project||!chosen)throw Error('Выбери узел графа или переключись в быстрый режим');
@@ -1265,6 +1270,10 @@ async function startup(){
  await updateDownloadProgress();
  await refreshJobHistory(true);
  await refreshDraftLibrary();
+ if(remembered.draft_id&&remembered.prompt===$('quickPrompt').value&&
+    remembered.negative_prompt===$('quickNegative').value){
+  document.dispatchEvent(new CustomEvent('draftsman:startup-ready',{detail:{draft_id:remembered.draft_id}}));
+ }
  await status();
 }
 window.addEventListener('resize',()=>{

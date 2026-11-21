@@ -83,21 +83,13 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
  background:radial-gradient(ellipse at 20% 20%,#a0f3e431,transparent 50%),
  radial-gradient(ellipse at 70% 50%,#49c7d526,transparent 65%);
  animation:underwater-current 11s ease-in-out infinite alternate;pointer-events:none}
-.wait-turtle{display:block;width:clamp(96px,85%,170px);height:128px;max-width:90%;
+.wait-turtle{display:block;width:clamp(140px,88%,230px);height:160px;max-width:95%;
  object-fit:contain;position:relative;z-index:2;pointer-events:none;
- filter:drop-shadow(0 8px 9px #0013278c);
- transform-origin:50% 56%;will-change:transform;
+ filter:drop-shadow(0 8px 9px #0013278c);transform-origin:50% 56%;
  animation:sea-turtle-swim 9s ease-in-out infinite}
 .wait-grid.single .wait-turtle{height:165px;width:min(230px,75%)}
 .wait-slot:nth-child(2) .wait-turtle{animation-delay:-3.4s;animation-direction:alternate-reverse}
 .wait-slot:nth-child(3) .wait-turtle{animation-delay:-6.8s}
-.wait-turtle{flex-shrink:0}
-.wait-turtle-art{display:block;width:100%;height:100%;overflow:visible}
-.wait-turtle-flipper{transform-box:view-box;will-change:transform}
-.wait-turtle-flipper.left{transform-origin:56px 65px;animation:turtle-paddle-left 2.8s ease-in-out infinite}
-.wait-turtle-flipper.right{transform-origin:91px 65px;animation:turtle-paddle-right 2.8s ease-in-out infinite}
-.wait-slot:nth-child(2) .wait-turtle-flipper{animation-delay:-1.2s}
-.wait-slot:nth-child(3) .wait-turtle-flipper{animation-delay:-2.1s}
 .wait-bubble{position:absolute;bottom:-20px;width:var(--bubble-size,12px);height:var(--bubble-size,12px);
  left:var(--bubble-x,30%);border:1px solid #c6f1ffba;border-radius:50%;
  background:radial-gradient(circle at 32% 26%,#fbffffc9 0%,#94d7f35e 23%,#2b91bd15 77%);
@@ -113,26 +105,13 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
  50%{transform:translate3d(19px,-13px,0) rotate(5deg) scale(1.02)}
  77%{transform:translate3d(9px,2px,0) rotate(0deg) scale(.98)}
  100%{transform:translate3d(-23px,8px,0) rotate(-7deg) scale(.94)}}
-/* Independent flipper strokes make the turtle swim without image generation or GPU work. */
-@keyframes turtle-paddle-left{
- 0%,100%{transform:rotate(7deg) scaleY(.94)}
- 22%{transform:rotate(-15deg) scaleY(1.07)}
- 48%{transform:rotate(-3deg) scaleY(.92)}
- 73%{transform:rotate(18deg) scaleY(.88)}
-}
-@keyframes turtle-paddle-right{
- 0%,100%{transform:rotate(-10deg) scaleY(.94)}
- 22%{transform:rotate(15deg) scaleY(.86)}
- 48%{transform:rotate(4deg) scaleY(1.05)}
- 73%{transform:rotate(-17deg) scaleY(1.08)}
-}
 @keyframes bubble-float{0%{transform:translate3d(0,0,0) scale(.55);opacity:0}
  20%{opacity:.92}80%{opacity:.65}100%{transform:translate3d(18px,-220px,0) scale(1.18);opacity:0}}
 @keyframes underwater-rays{from{transform:translateX(-4%) skewX(-12deg);opacity:.42}to{transform:translateX(8%) skewX(-12deg);opacity:.78}}
 @keyframes underwater-current{from{transform:translateX(-8%)}to{transform:translateX(12%)}}
 #jobProgress{margin:8px 0}#jobProgress progress{width:100%;height:12px;accent-color:var(--orange)}
 #jobHistory{max-width:100%;min-width:0}
-@media(prefers-reduced-motion:reduce){.wait-slot::before,.wait-slot::after,.wait-turtle,.wait-turtle-flipper,.wait-bubble{animation:none!important}.wait-bubble{opacity:.25}}
+@media(prefers-reduced-motion:reduce){.wait-slot::before,.wait-slot::after,.wait-turtle,.wait-bubble{animation:none!important}.wait-bubble{opacity:.25}}
 
 @media(max-width:970px){.cols{grid-template-columns:1fr}#canvasViewport{height:440px}}
 @media(max-width:600px){header{padding:9px}main{padding:8px}.panel{padding:10px}.grid3,.grid2{grid-template-columns:1fr 1fr}#systemMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -837,37 +816,6 @@ $('quickDraftAI').onclick=()=>task(async()=>{
  await api('/api/quick/draft/saved','PUT',{prompt:result.prompt,negative_prompt:result.negative_prompt||''});
  say('Промпт подготовлен и сохранён — проверь перед генерацией');
 });
-// Reuse the original 140x140 WebP in clipped SVG layers so the two
-// prominent front flippers can paddle without moving the shell or head.
-function createSwimmingTurtle(cardIndex){
- const wrapper=document.createElement('span');wrapper.className='wait-turtle';
- wrapper.setAttribute('aria-hidden','true');
- const suffix=String(cardIndex); // local, bounded card index (0..2)
- const bodyMask='turtle-body-mask-'+suffix;
- const leftClip='turtle-left-clip-'+suffix;
- const rightClip='turtle-right-clip-'+suffix;
- const asset='/static/images/sea-turtle.webp';
- const leftFin='M 58 60 Q 43 61 32 76 L 10 105 Q 7 117 21 114 L 47 101 L 66 78 Z';
- const rightFin='M 86 55 Q 101 53 115 65 L 139 77 L 139 97 L 116 90 L 92 75 Z';
- wrapper.innerHTML=`<svg class="wait-turtle-art" viewBox="0 0 140 140"
-    role="presentation" focusable="false" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <clipPath id="${leftClip}"><path d="${leftFin}"/></clipPath>
-      <clipPath id="${rightClip}"><path d="${rightFin}"/></clipPath>
-      <mask id="${bodyMask}" maskUnits="userSpaceOnUse" x="0" y="0" width="140" height="140">
-        <rect width="140" height="140" fill="white"/>
-        <path d="${leftFin}" fill="black"/>
-        <path d="${rightFin}" fill="black"/>
-      </mask>
-    </defs>
-    <g class="wait-turtle-flipper left"><image href="${asset}"
-      width="140" height="140" clip-path="url(#${leftClip})"/></g>
-    <g class="wait-turtle-flipper right"><image href="${asset}"
-      width="140" height="140" clip-path="url(#${rightClip})"/></g>
-    <image href="${asset}" width="140" height="140" mask="url(#${bodyMask})"/>
-  </svg>`;
- return wrapper;
-}
 function renderWaiting(total,completed=0){
  const amount=Math.max(1,Math.min(48,Number(total)||1));
  const start=Math.floor(Math.min(completed,amount-1)/3)*3;
@@ -878,7 +826,10 @@ function renderWaiting(total,completed=0){
   grid.replaceChildren();
   for(let i=0;i<visible;i++){
    const card=document.createElement('div');card.className='wait-slot';
-   card.append(createSwimmingTurtle(i));
+   const turtle=document.createElement('img');turtle.className='wait-turtle';
+   turtle.src='/static/images/sea-turtle-swim.svg';turtle.alt='';
+   turtle.width=230;turtle.height=160;turtle.decoding='async';
+   turtle.setAttribute('aria-hidden','true');card.append(turtle);
    const caption=document.createElement('span');caption.className='wait-caption';card.append(caption);
    for(let j=0;j<6;j++){
     const bubble=document.createElement('i');bubble.className='wait-bubble';

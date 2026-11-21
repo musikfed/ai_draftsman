@@ -19,13 +19,14 @@ async function api(url,method='GET',data){
  return result;
 }
 function notice(message){E('catalogCount').textContent=message}
-function rating(value,callback){
+function rating(value,callback,readonly=false){
  const row=label('div','','catalog-rating');
  function draw(current){
   row.replaceChildren();
   for(let score=1;score<=5;score++){
    const b=label('button','★',score<=current?'on':'');
-   b.type='button';b.title='Поставить '+score+' из 5';
+   b.type='button';b.title=readonly?'Архив: только чтение':'Поставить '+score+' из 5';
+   b.disabled=readonly;
    b.setAttribute('aria-label','Оценка '+score+' из 5');
    b.onclick=async()=>{try{await callback(score);draw(score)}catch(e){notice(e.message)}};
    row.append(b);
@@ -51,6 +52,7 @@ async function query(reset){
   q:E('catalogSearch').value.trim(),sort:E('catalogSort').value,
   rating:E('catalogMinRating').value,
   images:E('catalogImagesOnly').checked?'1':'0',
+  archive:E('catalogArchive').value,
   page:String(state.page),size:'8'
  });
  try{
@@ -63,7 +65,8 @@ async function query(reset){
    button.type='button';
    button.append(label('strong',(d.title||'Черновик')+' · #'+d.id));
    button.append(label('small',d.created_at+' · '+(d.rating?'★'+d.rating:'без оценки')+
-     ' · '+d.jobs+' генераций · '+(d.translated?'RU ✓':'перевод ожидается')));
+     ' · '+d.jobs+' генераций · '+(d.archived?'АРХИВ / чтение':'активен')+
+     ' · '+(d.translated?'RU ✓':'перевод ожидается')));
    button.append(label('span',d.preview_ru||d.preview||'Без текста','catalog-short'));
    button.onclick=()=>choose(d.id);
    list.append(button);
@@ -81,7 +84,7 @@ async function query(reset){
     label('p','Сохранённых записей по этому запросу нет.','catalog-empty'))}
  }catch(e){notice('Ошибка поиска: '+e.message)}
 }
-function imageBox(img,jobId){
+function imageBox(img,jobId,readonly=false){
  const c=label('div','','catalog-image-card');
  const link=document.createElement('a');link.href=img.url;link.target='_blank';
  link.rel='noopener';
@@ -92,7 +95,7 @@ function imageBox(img,jobId){
  c.append(rating(img.rating,async n=>{
   await api('/api/quick/images/'+jobId+'/'+img.variant+'/rating','PATCH',
    {rating:n,note:img.note||''});
- }));
+ },readonly));
  return c;
 }
 async function choose(id){
@@ -108,16 +111,18 @@ async function choose(id){
   const d=await api('/api/quick/catalog/'+id);
   if(state.selected!==id||version!==state.version)return;
   root.replaceChildren(label('h3','Черновик #'+id));
-  root.append(label('small','Сохранён: '+d.created_at,'catalog-meta'));
+  root.append(label('small','Сохранён: '+d.created_at+
+    (d.archived?' · АРХИВ — только чтение':' · активный черновик'),'catalog-meta'));
   const name=document.createElement('input');
   name.value=d.title||'';name.maxLength=140;name.placeholder='Название для удобного поиска';
+  name.readOnly=Boolean(d.archived);
   name.setAttribute('aria-label','Название черновика');
   root.append(name);
   root.append(label('span','Оценка черновика','catalog-meta'));
   root.append(rating(d.rating,async score=>{
    await api('/api/quick/catalog/'+id,'PATCH',{rating:score});
    const item=state.rows.find(v=>v.id===id);if(item)item.rating=score;
-  }));
+  },Boolean(d.archived)));
   const orig=textfield('Промпт · оригинал',d.prompt,false);
   const negative=textfield('Негативный промпт · оригинал',d.negative_prompt,false);
   const translated=textfield('Промпт · русский перевод',
@@ -125,7 +130,7 @@ async function choose(id){
   const translatedNeg=textfield('Негативный промпт · русский перевод',
    d.negative_prompt_ru===null?'Перевод ожидается...':d.negative_prompt_ru,false);
   root.append(orig.box,negative.box,translated.box,translatedNeg.box);
-  const note=textfield('Заметка (что понравилось, что исправить)',d.note,true);
+  const note=textfield('Заметка (что понравилось, что исправить)',d.note,!d.archived);
   root.append(note.box);
   const buttons=label('div','','catalog-foot');
   const restore=label('button','Загрузить текст в редактор');
@@ -139,6 +144,7 @@ async function choose(id){
    notice('Черновик #'+id+' открыт в редакторе. Старые версии не изменены.');
   };
   const save=label('button','Сохранить название и заметку');
+  save.disabled=Boolean(d.archived);
   save.onclick=async()=>{
    try{
     await api('/api/quick/catalog/'+id,'PATCH',{title:name.value,note:note.area.value});
@@ -147,13 +153,26 @@ async function choose(id){
     notice('Название и заметка к черновику #'+id+' сохранены');
    }catch(e){notice('Ошибка: '+e.message)}
   };
-  buttons.append(restore,save);root.append(buttons);
+  const archive=label('button',d.archived?'Вернуть из архива':'В архив · только чтение');
+  archive.onclick=async()=>{
+   if(!confirm((d.archived?'Разархивировать':'Зафиксировать только для чтения')+
+        ' черновик #'+id+'? Оригинальные промпты и рисунки останутся.'))return;
+   try{
+    await api('/api/quick/catalog/'+id+'/archive','POST',{archived:!d.archived});
+    await query(false);
+   }catch(e){notice('Архив: '+e.message)}
+  };
+  const regenerate=label('button','Перегенерировать · новый Seed');
+  regenerate.onclick=()=>window.DraftsmanRegenerate?.(id,'random');
+  const repeat=label('button','Повторить · прежний Seed');
+  repeat.onclick=()=>window.DraftsmanRegenerate?.(id,'same');
+  buttons.append(restore,save,archive,regenerate,repeat);root.append(buttons);
   root.append(label('h4','Результаты генераций'));
   let images=0;
   for(const job of d.jobs||[]){
    if(job.images?.length){
     const grid=label('div','','catalog-images');
-    for(const im of job.images){grid.append(imageBox(im,job.job_id));images++}
+    for(const im of job.images){grid.append(imageBox(im,job.job_id,Boolean(d.archived)));images++}
     root.append(grid);
    }else root.append(label('small','Задание '+job.job_id.slice(0,9)+
      ' · '+job.status+' · без готовых PNG','catalog-meta'));
@@ -163,8 +182,10 @@ async function choose(id){
   if(images)root.append(label('small','Рисунков: '+images+
    '. Открой миниатюру для полного размера и поставь оценку отдельному изображению.',
    'catalog-meta'));
-  if(d.prompt_ru===null||d.negative_prompt_ru===null){
+  if(!d.archived && (d.prompt_ru===null||d.negative_prompt_ru===null)){
    await translateCached(id,version,translated.area,translatedNeg.area,0);
+  }else if(d.archived&&d.prompt_ru===null){
+   translated.area.value='Архив только для чтения · перевод не создавался.';
   }
  }catch(e){notice('Ошибка загрузки: '+e.message)}
 }
@@ -198,12 +219,23 @@ let debounce=0;
 E('catalogSearch').addEventListener('input',()=>{
  clearTimeout(debounce);debounce=setTimeout(()=>query(true),300);
 });
-for(const field of ['catalogSort','catalogMinRating','catalogImagesOnly']){
+for(const field of ['catalogSort','catalogMinRating','catalogImagesOnly','catalogArchive']){
  E(field).addEventListener('change',()=>query(true));
 }
 E('catalogRefresh').onclick=()=>query(true);
 E('catalogPrev').onclick=()=>{if(state.page>1){state.page--;query(false)}};
 E('catalogNext').onclick=()=>{if(state.page<state.pages){state.page++;query(false)}};
+document.addEventListener('draftsman:catalog-open',event=>{
+ const id=Number(event.detail?.draft_id||0);
+ if(!Number.isInteger(id)||id<=0)return;
+ E('catalogArchive').value='all';
+ E('catalogSearch').value='#'+id;
+ panel.open=true;
+ query(true);
+});
+document.addEventListener('draftsman:job-completed',()=>{
+ if(panel.open)query(false);
+});
 panel.addEventListener('toggle',()=>{
  if(panel.open)query(true);
  else if(state.poll){clearTimeout(state.poll);state.poll=0}

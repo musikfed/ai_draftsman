@@ -9,6 +9,7 @@ from studio.jobs import submit_job, get_job, current_job, recent_jobs, WORKER_PY
 from studio.checkpoints import CHECKPOINTS, DEFAULT_CHECKPOINT, get_checkpoint, list_checkpoints
 from studio.parameters import choose_variants, MAX_VARIANTS
 from studio.downloads import download_checkpoint
+from studio import draft_catalog
 
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.getenv("DRAFTSMAN_DATA", str(BASE / "data"))).resolve()
@@ -61,6 +62,7 @@ def initialize():
             SELECT prompt,negative_prompt,updated_at FROM quick_draft
             WHERE (trim(prompt)<>'' OR trim(negative_prompt)<>'')
               AND NOT EXISTS(SELECT 1 FROM quick_draft_history)""")
+        draft_catalog.migrate(db,DATA)
         # Legacy tables are retained for previously created Karate Linux data.
         # A new universal installation starts with no comics or forced 24x5 rows.
         # Optional Karate project templates are imported explicitly by the user.
@@ -527,7 +529,11 @@ def quick_save_draft():
                 prompt=excluded.prompt, negative_prompt=excluded.negative_prompt,
                 updated_at=CURRENT_TIMESTAMP""",(positive,negative))
         version_id=archive_quick_draft(db,positive,negative)
-    return jsonify(saved=True,draft_id=version_id)
+    result={"saved":True,"draft_id":version_id}
+    if p.get("auto_translate") and (positive.strip() or negative.strip()):
+        translation,status=QUEUE_AUTO_TRANSLATION(version_id)
+        result["translation_status"]=translation.get("status","unavailable")
+    return jsonify(result)
 
 
 @app.get("/api/jobs/recent")
@@ -639,11 +645,20 @@ def quick_generate():
         "width": width, "height": height,
         "reference": reference, "lora": lora, "lora_scale": 0.7
     }
+    # Archive once even when the user clicks Generate without pressing Save.
+    with connection() as db:
+        saved=db.execute("""SELECT id FROM quick_draft_history
+            WHERE prompt=? AND negative_prompt=? ORDER BY id DESC LIMIT 1""",
+            (prompt,negative_prompt)).fetchone()
+        draft_id=saved["id"] if saved else archive_quick_draft(db,prompt,negative_prompt)
+    spec["draft_id"]=draft_id
     try:
         job_id = submit_job(spec)
     except (RuntimeError, FileNotFoundError, OSError) as error:
         return jsonify(error=str(error)), 422
-    return jsonify(job_id=job_id, submitted=True,
+    with connection() as db:
+        draft_catalog.link_job(db,draft_id,job_id)
+    return jsonify(job_id=job_id, draft_id=draft_id, submitted=True,
                    note="Direct GPU job started without project or graph"), 202
 
 
@@ -706,6 +721,10 @@ def job_image(job_id,variant):
                 return send_file(img,mimetype="image/png")
     return jsonify(error="Image is not ready"),404
 
+
+# One Flask process, no second service: cached auto translation runs only while GPU idle.
+QUEUE_AUTO_TRANSLATION=draft_catalog.register(
+    app,connection,DATA,OLLAMA_URL,OLLAMA_MODEL,current_job,get_job)
 
 if __name__=="__main__":
     app.run(host=os.getenv("DRAFTSMAN_HOST","0.0.0.0"),

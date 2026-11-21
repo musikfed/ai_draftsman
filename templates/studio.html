@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="ru"><head><link rel="stylesheet" href="/static/css/draft_catalog.css"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PEGINELAB AI Draftsman — Studio</title>
 <style>
 :root{color-scheme:dark;--bg:#0a1120;--pane:#152137;--field:#0c1728;--line:#34465f;--orange:#ef912c;--text:#eaf0f8;--muted:#a0b3cd;--green:#6bd2a1}
@@ -72,6 +72,26 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
 .mode-tabs{margin:0 0 12px}.mode-tabs button.chosen{background:#ba5f18;border-color:#f2a248}
 .cols.quick #projectColumn>.panel:not(#quickSection){display:none}
 .cols.quick #nodeInspector,.cols.quick #projectKnowledge{display:none}
+.cols.results{grid-template-columns:1fr}
+.cols.results #sideColumn{display:none}
+.cols.results #projectColumn>.panel:not(#resultsSection){display:none}
+#quickSection.collapsed,#resultsSection.collapsed{display:none!important}
+.quick-shelf{border:1px solid var(--line);border-radius:8px;margin:8px 0 15px;padding:9px;background:#0f2035}
+.quick-shelf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-top:8px}
+.quick-shelf-grid a{display:block;min-width:0}
+.quick-shelf-grid img{width:100%;height:100px;object-fit:contain;background:#08162a;border-radius:5px}
+.quick-shelf-grid .shelf-title{font-size:10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.results-controls{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.results-controls input{flex:2 1 240px}
+.results-controls select{flex:1 1 120px}
+.results-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:11px}
+.result-card{border:1px solid var(--line);background:#0e1e33;border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px}
+.result-card>img{width:100%;height:220px;object-fit:contain;background:#071323;border-radius:6px}
+.result-card strong{font-size:13px;overflow-wrap:anywhere}
+.result-card .result-sub{font-size:11px;color:var(--muted)}
+.result-card .result-actions{display:flex;gap:5px;flex-wrap:wrap}
+.result-card .result-actions button{font-size:11px}
+.result-card.archived{opacity:.84}
 #quickSection textarea{min-height:115px}
 .wait-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:10px 0}
 .wait-grid.single{grid-template-columns:minmax(0,1fr)}
@@ -89,11 +109,11 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
  background:radial-gradient(ellipse at 20% 20%,#a0f3e431,transparent 50%),
  radial-gradient(ellipse at 70% 50%,#49c7d526,transparent 65%);
  animation:underwater-current 11s ease-in-out infinite alternate;pointer-events:none}
-.wait-turtle{display:block;width:clamp(96px,85%,170px);height:128px;max-width:90%;
+.wait-turtle{display:block;width:clamp(170px,85%,250px);height:160px;max-width:94%;
  object-fit:contain;position:relative;z-index:2;pointer-events:none;
  filter:drop-shadow(0 8px 9px #0013278c);transform-origin:50% 56%;
  animation:sea-turtle-swim 9s ease-in-out infinite}
-.wait-grid.single .wait-turtle{height:165px;width:min(230px,75%)}
+.wait-grid.single .wait-turtle{height:194px;width:min(290px,86%)}
 .wait-slot:nth-child(2) .wait-turtle{animation-delay:-3.4s;animation-direction:alternate-reverse}
 .wait-slot:nth-child(3) .wait-turtle{animation-delay:-6.8s}
 .wait-bubble{position:absolute;bottom:-20px;width:var(--bubble-size,12px);height:var(--bubble-size,12px);
@@ -147,12 +167,16 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
  <div id="disks"></div><div class="muted" id="zombies"></div>
  </details>
 </details>
-<div class="toolbar mode-tabs"><button id="quickTab" class="chosen">⚡ Быстрый рисунок — без графа</button><button id="graphTab">◈ Проекты и граф</button><span class="muted">Нейросеть рисует на сервере, Ollama помогает составить промпт</span></div>
+<div class="toolbar mode-tabs"><button id="quickTab" class="chosen">⚡ Быстрый рисунок</button><button id="resultsTab">▣ Результаты</button><button id="graphTab">◈ Проекты и граф</button><span class="muted">Нейросеть рисует на сервере, Ollama помогает составить промпт</span></div>
 <div class="cols" id="workArea">
  <section id="projectColumn">
   <div id="quickSection" class="panel collapsed">
    <h2>Быстрая генерация без проекта</h2>
    <p class="muted">Описывай любую картинку. Граф, узлы и утверждение не нужны. По образцу — выбери img2img справа.</p>
+   <div class="quick-shelf">
+    <div class="toolbar"><strong>Последние эскизы</strong><span class="muted">Оригинальные PNG, без копий на диске</span><button id="openResults">Все результаты</button></div>
+    <div id="quickShelfGrid" class="quick-shelf-grid"></div>
+   </div>
    <label for="quickPrompt">Что нарисовать — положительный промпт</label>
    <textarea id="quickPrompt" placeholder="Например: пушистый рыжий котёнок на зимнем подоконнике, мягкий свет, выразительная иллюстрация"></textarea>
    <label for="quickNegative">Чего не должно быть — негативный промпт</label>
@@ -161,8 +185,8 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
     <button id="quickDraftAI">ИИ: улучшить промпт</button>
     <button id="saveQuick" class="primary">Сохранить черновик</button>
    </div>
-   <p class="muted">Черновик хранится в SQLite. Готовые изображения и параметры задания хранятся на сервере.</p>
-   <details id="draftHistoryPanel" style="margin-top:12px">
+   <p class="muted">Каждый новый текст сохраняется отдельной версией в SQLite. Ищи их ниже в каталоге.</p>
+   <details id="draftHistoryPanel" style="display:none" aria-hidden="true">
     <summary>Библиотека черновиков · сохранённые версии и перевод на русский</summary>
     <p class="muted">При каждом отличающемся сохранении создаётся версия. Перевод через локальную Ollama — только по кнопке.</p>
     <div class="toolbar">
@@ -173,12 +197,44 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
     </div>
     <pre id="draftHistoryPreview" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow-y:auto" aria-live="polite"></pre>
    </details>
-   <details id="promptExamplesPanel" style="margin-top:12px">
+   <details id="catalogPanel" style="margin-top:12px">
+    <summary>📚 Каталог черновиков · поиск, перевод, рисунки и оценки</summary>
+    <p class="muted">История не перезаписывается. Перевод кэшируется и хранится вместе с оригиналом. Во время генерации GPU перевод откладывается.</p>
+    <div class="catalog-tools">
+     <input id="catalogSearch" placeholder="Поиск по тексту, переводу, названию, заметкам..." aria-label="Поиск черновиков">
+     <select id="catalogSort" aria-label="Порядок"><option value="newest">Сначала новые</option><option value="oldest">Сначала старые</option><option value="rating">Сначала лучшие</option></select>
+     <select id="catalogMinRating" aria-label="Фильтр оценок"><option value="0">Любая оценка</option><option value="3">От 3 ★</option><option value="4">От 4 ★</option><option value="5">5 ★</option></select>
+     <select id="catalogArchive" aria-label="Состояние"><option value="active">Активные</option><option value="archived">Архив</option><option value="all">Все</option></select>
+     <label><input type="checkbox" id="catalogImagesOnly"> С изображениями</label>
+     <button id="catalogRefresh">↻ Найти</button>
+    </div>
+    <div class="catalog-cols">
+     <div><div id="catalogList" class="catalog-list"></div>
+      <div class="catalog-pager"><button id="catalogPrev">← Назад</button><span id="catalogCount" class="catalog-meta">Открой каталог</span><button id="catalogNext">Вперёд →</button></div>
+     </div>
+     <div id="catalogDetail" class="catalog-detail">Выбери черновик слева, чтобы увидеть оба промпта и связанные изображения.</div>
+    </div>
+   </details>
+   <details id="promptExamplesPanel" style="display:none" aria-hidden="true">
     <summary>Каталог промптов с реальными примерами изображений</summary>
     <p class="muted">Здесь только уже созданные картинки и точные параметры их генерации. По одному тексту воспроизведение не гарантируется; для сравнения нужен фиксированный Seed и тот же checkpoint.</p>
     <button id="refreshPromptExamples">↻ Обновить каталог</button>
     <div id="promptGallery" class="prompt-gallery"></div>
    </details>
+  </div>
+  <div id="resultsSection" class="panel collapsed">
+   <h2>▣ Результаты генерации</h2>
+   <p class="muted">Каждый эскиз имеет постоянный индекс, название и связь с черновиком. Кнопка «Перегенерировать» создаёт новую версию; старые рисунки не удаляются.</p>
+   <div class="results-controls">
+    <input id="resultsSearch" placeholder="Найти по названию или тексту промпта..." aria-label="Поиск результатов">
+    <select id="resultsSort"><option value="newest">Сначала новые</option><option value="oldest">Сначала старые</option><option value="rating">По оценке</option></select>
+    <select id="resultsArchive"><option value="all">Все</option><option value="active">Активные</option><option value="archived">Архив</option></select>
+    <button id="resultsRefresh">↻ Обновить</button>
+   </div>
+   <div id="resultsGrid" class="results-grid"></div>
+   <div class="catalog-pager">
+    <button id="resultsPrev">← Назад</button><span id="resultsPage" class="catalog-meta"></span><button id="resultsNext">Вперёд →</button>
+   </div>
   </div>
   <div class="panel">
    <h2 data-t="projects">Проекты</h2>
@@ -862,15 +918,20 @@ $('resetRenderSettings').onclick=()=>{
 };
 
 function switchMode(next){
- currentMode=next==='quick'?'quick':'graph';
+ currentMode=['quick','graph','results'].includes(next)?next:'quick';
  $('workArea').classList.toggle('quick',currentMode==='quick');
+ $('workArea').classList.toggle('results',currentMode==='results');
  $('quickSection').classList.toggle('collapsed',currentMode!=='quick');
+ $('resultsSection').classList.toggle('collapsed',currentMode!=='results');
  $('quickTab').classList.toggle('chosen',currentMode==='quick');
+ $('resultsTab').classList.toggle('chosen',currentMode==='results');
  $('graphTab').classList.toggle('chosen',currentMode==='graph');
  if(currentMode==='graph')renderGraph();
  try{localStorage.setItem('draftsman_mode',currentMode)}catch(e){}
 }
 $('quickTab').onclick=()=>switchMode('quick');
+$('resultsTab').onclick=()=>switchMode('results');
+$('openResults').onclick=()=>switchMode('results');
 $('graphTab').onclick=()=>switchMode('graph');
 async function refreshPromptExamples(){
  const response=await api('/api/prompt-gallery'),items=response.examples||[],panel=$('promptGallery');
@@ -966,7 +1027,7 @@ $('translateDraft').onclick=()=>task(async()=>{
 });
 $('saveQuick').onclick=()=>task(async()=>{
  const d=await api('/api/quick/draft/saved','PUT',
-  {prompt:$('quickPrompt').value,negative_prompt:$('quickNegative').value});
+  {prompt:$('quickPrompt').value,negative_prompt:$('quickNegative').value,auto_translate:true});
  await refreshDraftLibrary(d.draft_id);
  say('Черновик #'+d.draft_id+' сохранён в SQLite');
 });
@@ -977,7 +1038,7 @@ $('quickDraftAI').onclick=()=>task(async()=>{
  $('quickPrompt').value=result.prompt;$('quickNegative').value=result.negative_prompt||'';
  rememberSetting('quickPrompt');rememberSetting('quickNegative');
  const d=await api('/api/quick/draft/saved','PUT',
-  {prompt:result.prompt,negative_prompt:result.negative_prompt||''});
+  {prompt:result.prompt,negative_prompt:result.negative_prompt||'',auto_translate:true});
  await refreshDraftLibrary(d.draft_id);
  say('Промпт подготовлен и сохранён — проверь перед генерацией');
 });
@@ -1028,6 +1089,7 @@ $('demoWait').onclick=()=>{
   $('jobBar').value=0;renderWaiting(amount);
  }
 };
+const notifiedFinishedJobs=new Set();
 function stopJobPolling(){if(jobTimer){clearTimeout(jobTimer);jobTimer=null}}
 function scheduleJobRefresh(){
  stopJobPolling();
@@ -1052,7 +1114,13 @@ async function updateJob(){
    renderWaiting(job.total,job.completed);
    if($('monitorPanel').open)await status();
    scheduleJobRefresh();
- }else{stopJobPolling();await refreshJobHistory(false)}
+ }else{
+   stopJobPolling();await refreshJobHistory(false);
+   if(job.status==='completed'&&!notifiedFinishedJobs.has(currentJob)){
+     notifiedFinishedJobs.add(currentJob);
+     document.dispatchEvent(new CustomEvent('draftsman:job-completed',{detail:{job_id:currentJob}}));
+   }
+ }
  $('previews').replaceChildren(...(job.outputs||[]).map(o=>{
    const a=document.createElement('a');a.href=o.preview_url;a.target='_blank';a.rel='noopener';
    const img=document.createElement('img');img.src=o.preview_url;img.loading='lazy';img.alt='Вариант '+o.variant;
@@ -1127,6 +1195,24 @@ $('generate').onclick=()=>task(async()=>{
   say('Генерация запущена на RTX 3060 · ожидание показано в карточках');
  }finally{$('generate').disabled=false}
 });
+document.addEventListener('draftsman:open-result',event=>{
+ const id=event.detail?.job_id;
+ if(!/^[0-9a-f]{32}$/.test(id||''))return;
+ currentJob=id;
+ switchMode('quick');
+ task(updateJob);
+});
+document.addEventListener('draftsman:job-started',event=>{
+ const id=event.detail?.job_id;
+ if(!/^[0-9a-f]{32}$/.test(id||''))return;
+ currentJob=id;demoWaiting=false;activeRendering=true;
+ switchMode('quick');
+ $('jobInfo').classList.remove('collapsed');
+ $('jobInfo').textContent='Новое задание '+id+' запущено';
+ $('jobProgress').classList.remove('collapsed');
+ $('jobBar').value=0;renderWaiting(1);
+ task(async()=>{await refreshJobHistory(false);await updateJob()});
+});
 $('checkJob').onclick=()=>task(async()=>{
  if(!currentJob)currentJob=$('jobHistory').value||rowById(chosen)?.last_job||'';
  await updateJob();
@@ -1167,4 +1253,4 @@ restorePageSettings();
 translate();
 startup().catch(e=>say(e.message));
 
-</script></body></html>
+</script><script src="/static/js/draft_catalog.js"></script><script src="/static/js/results_catalog.js"></script></body></html>

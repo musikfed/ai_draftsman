@@ -9,6 +9,7 @@ from studio.jobs import submit_job, get_job, current_job, recent_jobs, WORKER_PY
 from studio.checkpoints import CHECKPOINTS, DEFAULT_CHECKPOINT, get_checkpoint, list_checkpoints
 from studio.parameters import choose_variants, MAX_VARIANTS
 from studio.downloads import download_checkpoint
+from studio import draft_catalog
 
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.getenv("DRAFTSMAN_DATA", str(BASE / "data"))).resolve()
@@ -61,6 +62,7 @@ def initialize():
             SELECT prompt,negative_prompt,updated_at FROM quick_draft
             WHERE (trim(prompt)<>'' OR trim(negative_prompt)<>'')
               AND NOT EXISTS(SELECT 1 FROM quick_draft_history)""")
+        draft_catalog.migrate(db,DATA)
         # Legacy tables are retained for previously created Karate Linux data.
         # A new universal installation starts with no comics or forced 24x5 rows.
         # Optional Karate project templates are imported explicitly by the user.
@@ -428,7 +430,7 @@ def generate():
 def archive_quick_draft(db, prompt, negative_prompt):
     """Keep saved versions without growing history for repeated identical saves."""
     last=db.execute("""SELECT id,prompt,negative_prompt
-        FROM quick_draft_history ORDER BY id DESC LIMIT 1""").fetchone()
+        FROM quick_draft_history WHERE archived=0 ORDER BY id DESC LIMIT 1""").fetchone()
     if last and last["prompt"]==prompt and last["negative_prompt"]==negative_prompt:
         return last["id"]
     result=db.execute("""INSERT INTO quick_draft_history(prompt,negative_prompt)
@@ -467,10 +469,12 @@ def quick_draft_translate(draft_id):
         return jsonify(error="Invalid Ollama model"),400
     with connection() as db:
         row=db.execute("""SELECT id,prompt,negative_prompt,prompt_ru,
-            negative_prompt_ru FROM quick_draft_history WHERE id=?""",
+            negative_prompt_ru,archived FROM quick_draft_history WHERE id=?""",
             (draft_id,)).fetchone()
     if row is None:
         return jsonify(error="Draft not found"),404
+    if row["archived"]:
+        return jsonify(error="Archived draft is read-only"),409
     if row["prompt_ru"] is not None and row["negative_prompt_ru"] is not None:
         return jsonify(translated=True,prompt_ru=row["prompt_ru"],
                        negative_prompt_ru=row["negative_prompt_ru"],cached=True)
@@ -502,7 +506,7 @@ def quick_draft_translate(draft_id):
         return jsonify(error=f"Translation failed: {exc}"),502
     with connection() as db:
         db.execute("""UPDATE quick_draft_history SET prompt_ru=?,negative_prompt_ru=?
-            WHERE id=?""",(prompt_ru,negative_ru,draft_id))
+            WHERE id=? AND archived=0""",(prompt_ru,negative_ru,draft_id))
     return jsonify(translated=True,prompt_ru=prompt_ru,negative_prompt_ru=negative_ru)
 
 
@@ -527,7 +531,11 @@ def quick_save_draft():
                 prompt=excluded.prompt, negative_prompt=excluded.negative_prompt,
                 updated_at=CURRENT_TIMESTAMP""",(positive,negative))
         version_id=archive_quick_draft(db,positive,negative)
-    return jsonify(saved=True,draft_id=version_id)
+    result={"saved":True,"draft_id":version_id}
+    if p.get("auto_translate") and (positive.strip() or negative.strip()):
+        translation,status=QUEUE_AUTO_TRANSLATION(version_id)
+        result["translation_status"]=translation.get("status","unavailable")
+    return jsonify(result)
 
 
 @app.get("/api/jobs/recent")
@@ -587,7 +595,10 @@ def prompt_gallery():
 @app.post("/api/quick/generate")
 def quick_generate():
     """Direct txt2img/img2img. No project, graph or approved node required."""
-    data = request.get_json(silent=True) or {}
+    return create_quick_generation(request.get_json(silent=True) or {})
+
+
+def create_quick_generation(data):
     prompt = str(data.get("prompt") or "").strip()
     negative_prompt = str(data.get("negative_prompt") or "").strip()
     if not prompt or len(prompt) > 16000 or len(negative_prompt) > 4000:
@@ -639,11 +650,38 @@ def quick_generate():
         "width": width, "height": height,
         "reference": reference, "lora": lora, "lora_scale": 0.7
     }
+    # Archive once even when the user clicks Generate without pressing Save.
+    with connection() as db:
+        parent_id=data.get("_fork_from")
+        if parent_id is not None:
+            try:
+                parent_id=int(parent_id)
+            except (TypeError,ValueError):
+                return jsonify(error="Invalid source draft"),400
+            original=db.execute("""SELECT id,title,prompt_ru,negative_prompt_ru
+                FROM quick_draft_history WHERE id=?""",(parent_id,)).fetchone()
+            if original is None:
+                return jsonify(error="Source draft not found"),404
+            base_title=(original["title"] or prompt[:60]).strip()
+            title=(base_title+" · перегенерация")[:140]
+            draft_id=db.execute("""INSERT INTO quick_draft_history
+                (prompt,negative_prompt,title,prompt_ru,negative_prompt_ru,parent_draft_id)
+                VALUES(?,?,?,?,?,?)""",
+                (prompt,negative_prompt,title,original["prompt_ru"],
+                 original["negative_prompt_ru"],parent_id)).lastrowid
+        else:
+            saved=db.execute("""SELECT id FROM quick_draft_history
+                WHERE prompt=? AND negative_prompt=? AND archived=0
+                ORDER BY id DESC LIMIT 1""",(prompt,negative_prompt)).fetchone()
+            draft_id=saved["id"] if saved else archive_quick_draft(db,prompt,negative_prompt)
+    spec["draft_id"]=draft_id
     try:
         job_id = submit_job(spec)
     except (RuntimeError, FileNotFoundError, OSError) as error:
         return jsonify(error=str(error)), 422
-    return jsonify(job_id=job_id, submitted=True,
+    with connection() as db:
+        draft_catalog.link_job(db,draft_id,job_id)
+    return jsonify(job_id=job_id, draft_id=draft_id, submitted=True,
                    note="Direct GPU job started without project or graph"), 202
 
 
@@ -706,6 +744,48 @@ def job_image(job_id,variant):
                 return send_file(img,mimetype="image/png")
     return jsonify(error="Image is not ready"),404
 
+
+@app.post("/api/quick/catalog/<int:draft_id>/regenerate")
+def regenerate_saved_draft(draft_id):
+    """Fork a version and launch one GPU variant without modifying its source."""
+    with connection() as db:
+        draft=db.execute("""SELECT prompt,negative_prompt FROM quick_draft_history
+            WHERE id=?""",(draft_id,)).fetchone()
+        if draft is None:
+            return jsonify(error="Draft not found"),404
+        linked=db.execute("""SELECT job_id FROM quick_draft_jobs
+            WHERE draft_id=? ORDER BY rowid DESC LIMIT 1""",(draft_id,)).fetchone()
+    previous={}
+    if linked:
+        path=(DATA/"jobs"/linked["job_id"]/"spec.json").resolve()
+        if path.parent==(DATA/"jobs"/linked["job_id"]).resolve() and path.is_file():
+            try:
+                previous=json.loads(path.read_text(encoding="utf-8"))
+            except (OSError,ValueError):
+                previous={}
+    source_ref=str(previous.get("reference") or "")
+    mode=str(previous.get("mode") or "txt2img")
+    requested=request.get_json(silent=True) or {}
+    use_same_seed=requested.get("seed_mode")=="same"
+    payload={
+        "prompt":draft["prompt"],"negative_prompt":draft["negative_prompt"],
+        "checkpoint":previous.get("checkpoint") or DEFAULT_CHECKPOINT,
+        "mode":mode if mode in ("img2img","txt2img") else "txt2img",
+        "reference":Path(source_ref).name if source_ref else "",
+        "variants":1,  # never silently generate 48 variants on re-run
+        "seed":previous.get("seed",0) if use_same_seed else 0,
+        "steps":previous.get("steps",28),"cfg":previous.get("cfg",6.5),
+        "width":previous.get("width",768),"height":previous.get("height",960),
+        "strength":previous.get("strength",0.55),
+        "lora":previous.get("lora",""),
+        "_fork_from":draft_id
+    }
+    return create_quick_generation(payload)
+
+
+# One Flask process, no second service: cached auto translation runs only while GPU idle.
+QUEUE_AUTO_TRANSLATION=draft_catalog.register(
+    app,lambda: connection(),lambda: DATA,OLLAMA_URL,OLLAMA_MODEL,current_job,get_job)
 
 if __name__=="__main__":
     app.run(host=os.getenv("DRAFTSMAN_HOST","0.0.0.0"),

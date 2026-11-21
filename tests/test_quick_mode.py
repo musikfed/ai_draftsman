@@ -350,6 +350,26 @@ class QuickModeTests(unittest.TestCase):
             self.assertIsNotNone(db.execute(
                 "SELECT id FROM quick_draft_history WHERE id=?",(draft,)).fetchone())
 
+    def test_delete_last_image_unlinks_job_but_keeps_draft_and_spec(self):
+        draft,jid,folder=self._create_deletable_result(count=1)
+        with patch.object(jobs,"JOBS",Path(self.temp.name)/"jobs"),patch.object(
+            studio_app,"DATA",Path(self.temp.name)):
+            result=self.client.get("/api/quick/results").get_json()["results"][0]
+            deleted=self.client.delete("/api/quick/results/"+str(result["index"]))
+            self.assertEqual(deleted.status_code,200)
+            self.assertEqual(deleted.get_json()["remaining_variants"],0)
+            self.assertEqual(self.client.get("/api/quick/results").get_json()["total"],0)
+            draft_data=self.client.get("/api/quick/catalog/"+str(draft)).get_json()
+            self.assertEqual(draft_data["jobs"],[])
+        with sqlite3.connect(self.db_path) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM quick_draft_jobs").fetchone()[0],0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM quick_result_index").fetchone()[0],0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM quick_draft_history WHERE id=?",
+                            (draft,)).fetchone()[0],1)
+        self.assertTrue((folder/"spec.json").exists())
+        self.assertTrue((folder/"state.json").exists())
+        self.assertEqual(len(list((folder/"images").glob("*.png"))),0)
+
     def test_delete_archived_result_requires_unarchive_and_does_not_remove_files(self):
         draft,jid,folder=self._create_deletable_result(count=1,archived=True)
         with patch.object(jobs,"JOBS",Path(self.temp.name)/"jobs"),patch.object(

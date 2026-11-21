@@ -948,7 +948,7 @@ function switchMode(next){
 }
 $('quickTab').onclick=()=>switchMode('quick');
 $('resultsTab').onclick=()=>switchMode('results');
-$('openResults').onclick=()=>switchMode('results');
+$('openResults').onclick=()=>{$('resultsTab').click();$('resultsSearch').focus()};
 $('graphTab').onclick=()=>switchMode('graph');
 async function refreshPromptExamples(){
  const response=await api('/api/prompt-gallery'),items=response.examples||[],panel=$('promptGallery');

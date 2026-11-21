@@ -469,10 +469,12 @@ def quick_draft_translate(draft_id):
         return jsonify(error="Invalid Ollama model"),400
     with connection() as db:
         row=db.execute("""SELECT id,prompt,negative_prompt,prompt_ru,
-            negative_prompt_ru FROM quick_draft_history WHERE id=?""",
+            negative_prompt_ru,archived FROM quick_draft_history WHERE id=?""",
             (draft_id,)).fetchone()
     if row is None:
         return jsonify(error="Draft not found"),404
+    if row["archived"]:
+        return jsonify(error="Archived draft is read-only"),409
     if row["prompt_ru"] is not None and row["negative_prompt_ru"] is not None:
         return jsonify(translated=True,prompt_ru=row["prompt_ru"],
                        negative_prompt_ru=row["negative_prompt_ru"],cached=True)
@@ -504,7 +506,7 @@ def quick_draft_translate(draft_id):
         return jsonify(error=f"Translation failed: {exc}"),502
     with connection() as db:
         db.execute("""UPDATE quick_draft_history SET prompt_ru=?,negative_prompt_ru=?
-            WHERE id=?""",(prompt_ru,negative_ru,draft_id))
+            WHERE id=? AND archived=0""",(prompt_ru,negative_ru,draft_id))
     return jsonify(translated=True,prompt_ru=prompt_ru,negative_prompt_ru=negative_ru)
 
 

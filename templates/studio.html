@@ -789,6 +789,7 @@ $('uploadReference').onclick=()=>task(async()=>{
  const form=new FormData();form.append('file',f);
  const r=await api('/api/references/upload','POST',form);
  await refreshResources();$('reference').value=r.filename;$('renderMode').value='img2img';
+ rememberSetting('reference');rememberSetting('renderMode');
  say('Образец загружен');
 });
 

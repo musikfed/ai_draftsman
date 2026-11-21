@@ -98,8 +98,10 @@ def _safe_param_int(s, default, low, high):
     return max(low,min(high,n))
 
 
-def register(app, connection, data, ollama_url, ollama_model, current_job, get_job):
+def register(app, connection, data_source, ollama_url, ollama_model, current_job, get_job):
     """Uses only the existing Flask server and SQLite DB."""
+    def data_root():
+        return data_source() if callable(data_source) else data_source
     def lookup(draft_id):
         with connection() as db:
             row=db.execute("""SELECT id,title,prompt,negative_prompt,prompt_ru,
@@ -168,7 +170,7 @@ def register(app, connection, data, ollama_url, ollama_model, current_job, get_j
                 if not 1<=variant<=48:
                     continue
                 image=Path(str(output.get("png8") or "")).resolve()
-                expected=(data/"jobs"/job_id/"images").resolve()
+                expected=(data_root()/"jobs"/job_id/"images").resolve()
                 if image.parent!=expected or not image.is_file():
                     continue
                 score=grades.get((job_id,variant),{})

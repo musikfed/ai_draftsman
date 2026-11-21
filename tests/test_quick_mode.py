@@ -112,8 +112,8 @@ class QuickModeTests(unittest.TestCase):
         }),encoding="utf-8")
         jobs=[{"job_id":jid,"source":"quick","status":"completed"}]
         state={"status":"completed","outputs":[{"variant":1,"seed":424242}]}
-        with patch.object(studio_app,"DATA",Path(self.temp.name)), \\
-             patch.object(studio_app,"recent_jobs",return_value=jobs), \\
+        with patch.object(studio_app,"DATA",Path(self.temp.name)), \
+             patch.object(studio_app,"recent_jobs",return_value=jobs), \
              patch.object(studio_app,"get_job",return_value=state):
             resp=self.client.get("/api/prompt-gallery")
             self.assertEqual(resp.status_code,200)
@@ -133,8 +133,8 @@ class QuickModeTests(unittest.TestCase):
                                         encoding="utf-8")
         jobs=[{"job_id":jid,"source":"quick","status":"completed"}]
         state={"status":"completed","outputs":[{"variant":1,"seed":11}]}
-        with patch.object(studio_app,"DATA",Path(self.temp.name)), \\
-             patch.object(studio_app,"recent_jobs",return_value=jobs), \\
+        with patch.object(studio_app,"DATA",Path(self.temp.name)), \
+             patch.object(studio_app,"recent_jobs",return_value=jobs), \
              patch.object(studio_app,"get_job",return_value=state):
             response=self.client.get("/api/prompt-gallery")
         self.assertEqual(response.get_json()["examples"],[])

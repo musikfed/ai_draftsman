@@ -298,8 +298,33 @@ function translate(){
  document.querySelectorAll('[data-t]').forEach(el=>el.textContent=t(el.dataset.t));
 }
 function opt(value,label){return new Option(label,String(value))}
+// Local working copy: edits persist immediately even before the user presses Save.
+const PERSISTENT_FIELDS=[
+ 'quickPrompt','quickNegative','quickLLM','variants','resolution','seed',
+ 'steps','cfg','strength','renderMode','reference','lora'
+];
+function readSetting(id){
+ try{return localStorage.getItem('draftsman_setting_'+id)}catch(e){return null}
+}
+function rememberSetting(id){
+ try{localStorage.setItem('draftsman_setting_'+id,$(id).value)}catch(e){}
+}
+function restorePageSettings(){
+ const lateOptions=new Set(['quickLLM','reference','lora']);
+ for(const id of PERSISTENT_FIELDS){
+  const el=$(id),saved=readSetting(id);
+  if(saved!==null&&!lateOptions.has(id)&&
+    (el.tagName!=='SELECT'||Array.from(el.options).some(o=>o.value===saved)))el.value=saved;
+  el.addEventListener('input',()=>rememberSetting(id));
+  el.addEventListener('change',()=>rememberSetting(id));
+ }
+ $('autoMonitor').checked=readSetting('autoMonitor')==='true';
+ $('monitorPanel').open=readSetting('monitorPanel')==='true';
+ const language=readSetting('lang');
+ if(language&&LANGS.includes(language)){$('lang').value=language;lang=language}
+}
 for(const code of LANGS){$('lang').add(opt(code,code.toUpperCase()))}
-$('lang').onchange=()=>{lang=$('lang').value;translate()};translate();
+$('lang').onchange=()=>{lang=$('lang').value;rememberSetting('lang');translate()};translate();
 function rowById(id){return nodes.find(n=>n.id===id)}
 function clearEdit(){
  $('selectedNode').textContent='Выбери узел на графе или создай новый';
@@ -310,12 +335,15 @@ async function loadProjects(selected){
  const result=await api('/api/studio/projects');projects=result.projects;
  $('projectSelect').replaceChildren(...projects.map(p=>opt(p.id,p.name)));
  if(!projects.length){project=null;nodes=[];edges=[];renderGraph();clearEdit();say('Создай первый проект. Karate Linux доступен как отдельный шаблон.');return}
- const id=selected&&projects.some(p=>p.id===selected)?selected:projects[0].id;
+ const savedId=Number(readSetting('projectSelect'));
+ const id=selected&&projects.some(p=>p.id===selected)?selected:
+  projects.some(p=>p.id===savedId)?savedId:projects[0].id;
  $('projectSelect').value=String(id);await loadProject(id);
 }
 async function loadProject(id,keepSelection=false){
  const data=await api('/api/studio/projects/'+id);
  project=data.project;nodes=data.nodes;edges=data.edges;
+ $('projectSelect').value=String(id);rememberSetting('projectSelect');
  ['projectName','projectBrief','basePrompt','globalNegative','systemPrompt'].forEach((key,i)=>{
    const field=['name','description','base_prompt','negative_prompt','system_prompt'][i];
    $(key).value=project[field]||'';
@@ -429,7 +457,7 @@ async function refreshLLM(preferred){
  if(model&&!list.includes(model))list.unshift(model);
  $('llmSelect').replaceChildren(...list.map(n=>opt(n,n)));
  if(model)$('llmSelect').value=model;
- const q = $('quickLLM').value || 'qwen3:8b';
+ const q = readSetting('quickLLM') || $('quickLLM').value || 'qwen3:8b';
  const choices = [...new Set([...list, q])];
  $('quickLLM').replaceChildren(...choices.map(n=>opt(n,n)));
  $('quickLLM').value=q;
@@ -437,10 +465,12 @@ async function refreshLLM(preferred){
 }
 async function refreshResources(){
  const r=await api('/api/references');
- const old=$('reference').value;$('reference').replaceChildren(opt('','Без референса'),...r.references.map(x=>opt(x,x)));
+ const old=readSetting('reference')??$('reference').value;
+ $('reference').replaceChildren(opt('','Без референса'),...r.references.map(x=>opt(x,x)));
  if(r.references.includes(old))$('reference').value=old;
  const l=await api('/api/loras');
- const oldLora=$('lora').value;$('lora').replaceChildren(opt('','Без LoRA'),...l.loras.map(x=>opt(x,x)));
+ const oldLora=readSetting('lora')??$('lora').value;
+ $('lora').replaceChildren(opt('','Без LoRA'),...l.loras.map(x=>opt(x,x)));
  if(l.loras.includes(oldLora))$('lora').value=oldLora;
 }
 function fmt(m){if(m==null)return '—';return m>=1024?(m/1024).toFixed(1)+' GiB':Math.round(m)+' MiB'}
@@ -571,10 +601,14 @@ function syncMonitorTimer(){
  }
 }
 $('monitorPanel').addEventListener('toggle',()=>{
+ try{localStorage.setItem('draftsman_setting_monitorPanel',String($('monitorPanel').open))}catch(e){}
  if($('monitorPanel').open)task(status);
  syncMonitorTimer();
 });
-$('autoMonitor').addEventListener('change',syncMonitorTimer);
+$('autoMonitor').addEventListener('change',()=>{
+ try{localStorage.setItem('draftsman_setting_autoMonitor',String($('autoMonitor').checked))}catch(e){}
+ syncMonitorTimer();
+});
 document.addEventListener('visibilitychange',()=>{
  syncMonitorTimer();
  if(!document.hidden&&$('monitorPanel').open)task(status);
@@ -778,6 +812,7 @@ $('quickDraftAI').onclick=()=>task(async()=>{
  say('Ollama составляет промпт...');
  const result=await api('/api/quick/draft','POST',{idea,model:$('quickLLM').value});
  $('quickPrompt').value=result.prompt;$('quickNegative').value=result.negative_prompt||'';
+ rememberSetting('quickPrompt');rememberSetting('quickNegative');
  await api('/api/quick/draft/saved','PUT',{prompt:result.prompt,negative_prompt:result.negative_prompt||''});
  say('Промпт подготовлен и сохранён — проверь перед генерацией');
 });
@@ -929,27 +964,24 @@ $('kbUpload').onclick=()=>task(async()=>{
  say('Добавлено '+r.chunks+' фрагментов знаний к этому проекту');
 });
 async function startup(){
-  const remembered=await api('/api/quick/draft/saved');
+ // Server-backed draft remains the fallback, but never clobbers a local unsaved edit
+ // (including an intentionally empty prompt). Check again after the async request.
+ const remembered=await api('/api/quick/draft/saved');
+ if(readSetting('quickPrompt')===null&&!$('quickPrompt').value)
   $('quickPrompt').value=remembered.prompt||'';
+ if(readSetting('quickNegative')===null&&!$('quickNegative').value)
   $('quickNegative').value=remembered.negative_prompt||'';
-  try{switchMode(localStorage.getItem('draftsman_mode')||'quick')}catch(e){switchMode('quick')}
-  await Promise.all([loadProjects(),refreshResources(),loadImageModels()]);
-  await updateDownloadProgress();
-  for(const id of ['variants','resolution','seed','steps','cfg','strength','renderMode']){
-   try{
-    const saved=localStorage.getItem('draftsman_setting_'+id);
-    if(saved!==null)$(id).value=saved;
-   }catch(e){}
-   $(id).addEventListener('change',()=>{
-    try{localStorage.setItem('draftsman_setting_'+id,$(id).value)}catch(e){}
-   });
-  }
-  await refreshJobHistory(true);
-  await status();
+ try{switchMode(localStorage.getItem('draftsman_mode')||'quick')}catch(e){switchMode('quick')}
+ await Promise.all([loadProjects(),refreshResources(),loadImageModels()]);
+ await updateDownloadProgress();
+ await refreshJobHistory(true);
+ await status();
 }
 window.addEventListener('resize',()=>{
-  if(currentMode==='graph' && project)renderGraph();
+ if(currentMode==='graph' && project)renderGraph();
 });
+restorePageSettings();
+translate();
 startup().catch(e=>say(e.message));
 
 </script></body></html>

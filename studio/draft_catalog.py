@@ -374,7 +374,7 @@ def register(app, connection, data_source, ollama_url, ollama_model, current_job
               (row["prompt"],row["negative_prompt"])).fetchone()
             if other:
                 db.execute("""UPDATE quick_draft_history SET prompt_ru=?,negative_prompt_ru=?
-                  WHERE id=? AND prompt_ru IS NULL""",
+                  WHERE id=? AND prompt_ru IS NULL AND archived=0""",
                   (other["prompt_ru"],other["negative_prompt_ru"],draft_id))
                 return True
         return False
@@ -406,7 +406,7 @@ def register(app, connection, data_source, ollama_url, ollama_model, current_job
             with connection() as db:
                 db.execute("""UPDATE quick_draft_history
                     SET prompt_ru=?, negative_prompt_ru=?
-                    WHERE id=? AND prompt=? AND negative_prompt=?""",
+                    WHERE id=? AND prompt=? AND negative_prompt=? AND archived=0""",
                     (pos,neg,draft_id,prompt,negative))
                 db.execute("UPDATE quick_translation_attempts SET failed=0 WHERE draft_id=?",
                            (draft_id,))

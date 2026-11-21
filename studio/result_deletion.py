@@ -121,6 +121,10 @@ def delete_single_result(result_id: int, connection, data_root: Path, get_job):
                 db.execute("DELETE FROM quick_image_ratings WHERE job_id=? AND variant=?",
                            (job_id, variant))
                 db.execute("DELETE FROM quick_result_index WHERE id=?", (result_id,))
+                if not others:
+                    # A job with no remaining result should not appear under
+                    # the draft's "has images" or "generated results" filter.
+                    db.execute("DELETE FROM quick_draft_jobs WHERE job_id=?", (job_id,))
         except (OSError, sqlite3.Error, RuntimeError, ValueError) as error:
             try:
                 atomic_json(manifest, original_state)

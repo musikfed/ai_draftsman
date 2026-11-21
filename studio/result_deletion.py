@@ -85,8 +85,11 @@ def delete_single_result(result_id: int, connection, data_root: Path, get_job):
             if source.is_symlink():
                 return {"error": "Refusing to delete a symlinked image"}, 409
             resolved = source.resolve()
-            if resolved.parent != image_dir or resolved.suffix.lower() != ".png":
-                return {"error": "Refusing to delete an image outside this job"}, 409
+            expected_suffix = (f"_v{variant:02d}.png" if field == "png8"
+                               else f"_v{variant:02d}_master.png")
+            if (resolved.parent != image_dir or resolved.suffix.lower() != ".png"
+                    or not resolved.name.endswith(expected_suffix)):
+                return {"error": "Image does not match this job variant"}, 409
             if resolved not in files:
                 files.append(resolved)
 

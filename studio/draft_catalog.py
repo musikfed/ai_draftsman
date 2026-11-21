@@ -47,6 +47,12 @@ def migrate(db, data: Path):
         CREATE TABLE IF NOT EXISTS quick_catalog_migrations (
           key TEXT PRIMARY KEY
         );
+        CREATE TABLE IF NOT EXISTS quick_result_index (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          job_id TEXT NOT NULL,
+          variant INTEGER NOT NULL,
+          UNIQUE(job_id,variant)
+        );
         CREATE TABLE IF NOT EXISTS quick_translation_attempts (
           draft_id INTEGER PRIMARY KEY,
           attempted_at TEXT NOT NULL,
@@ -201,6 +207,82 @@ def register(app, connection, data_source, ollama_url, ollama_model, current_job
         with _TRANSLATE_LOCK:
             item["translating"]=draft_id in _TRANSLATING
         return jsonify(item)
+
+    @app.get("/api/quick/results")
+    def catalog_results():
+        """Stable result IDs, original PNG paths, no copied images or repeated GPU tasks."""
+        query=(request.args.get("q") or "").strip()[:150]
+        archived=request.args.get("archive","all")
+        order=request.args.get("sort","newest")
+        page=_safe_param_int(request.args.get("page"),1,1,99999)
+        size=_safe_param_int(request.args.get("size"),12,1,36)
+        where=["1=1"]
+        args=[]
+        if archived=="active":
+            where.append("d.archived=0")
+        elif archived=="archived":
+            where.append("d.archived=1")
+        if query:
+            where.append("""(d.title LIKE ? OR d.prompt LIKE ? OR
+                d.negative_prompt LIKE ? OR d.prompt_ru LIKE ? OR d.note LIKE ?)""")
+            args.extend(["%"+query+"%"]*5)
+        with connection() as db:
+            rows=db.execute(f"""SELECT j.job_id,j.draft_id,d.title,d.prompt,
+                d.prompt_ru,d.archived,j.created_at
+                FROM quick_draft_jobs j JOIN quick_draft_history d ON d.id=j.draft_id
+                WHERE {" AND ".join(where)} ORDER BY j.rowid DESC LIMIT 2000""",args).fetchall()
+            info=[dict(row) for row in rows]
+            ratings=db.execute("SELECT job_id,variant,rating FROM quick_image_ratings").fetchall()
+        scores={(row["job_id"],row["variant"]):row["rating"] for row in ratings}
+        results=[]
+        root=(data_root()/"jobs").resolve()
+        for row in info:
+            job_id=row["job_id"]
+            if not _ID.fullmatch(job_id):continue
+            state=get_job(job_id) or {}
+            if state.get("status")!="completed":continue
+            for output in state.get("outputs",[])[:48]:
+                try:
+                    variant=int(output["variant"])
+                except (ValueError,TypeError,KeyError):
+                    continue
+                if not 1<=variant<=48:continue
+                picture=Path(str(output.get("png8") or "")).resolve()
+                if picture.parent!=(root/job_id/"images").resolve() or not picture.is_file():
+                    continue
+                title=row["title"].strip() if row["title"] else ""
+                if not title:
+                    base=(row["prompt_ru"] or row["prompt"] or "Рисунок").strip()
+                    title=base[:75] or "Без названия"
+                results.append({
+                    "job_id":job_id,"variant":variant,"draft_id":row["draft_id"],
+                    "title":title,"archived":bool(row["archived"]),
+                    "image_url":f"/api/jobs/{job_id}/images/{variant}",
+                    "rating":scores.get((job_id,variant),0),
+                    "created_at":state.get("finished_at") or state.get("created_at") or 0,
+                    "seed":output.get("seed")
+                })
+        # Image identity is immutable even when the user generates a new version.
+        # Indexing stores only job_id+variant; the actual PNG remains in data/jobs.
+        with connection() as db:
+            for item in results:
+                db.execute("""INSERT OR IGNORE INTO quick_result_index(job_id,variant)
+                    VALUES(?,?)""",(item["job_id"],item["variant"]))
+            keys={(row["job_id"],row["variant"]):row["id"] for row in
+                db.execute("SELECT id,job_id,variant FROM quick_result_index")}
+        for item in results:
+            item["index"]=keys[(item["job_id"],item["variant"])]
+        if order=="rating":
+            results.sort(key=lambda r:(r["rating"],r["created_at"]),reverse=True)
+        elif order=="oldest":
+            results.sort(key=lambda r:(r["created_at"],r["index"]))
+        else:
+            results.sort(key=lambda r:(r["created_at"],r["index"]),reverse=True)
+        count=len(results)
+        return jsonify(results=results[(page-1)*size:page*size],
+                       total=count,page=page,size=size,
+                       pages=max(1,(count+size-1)//size))
+
 
     @app.post("/api/quick/catalog/<int:draft_id>/archive")
     def catalog_archive(draft_id):

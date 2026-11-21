@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="ru"><head><link rel="stylesheet" href="/static/css/draft_catalog.css"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PEGINELAB AI Draftsman — Studio</title>
 <style>
 :root{color-scheme:dark;--bg:#0a1120;--pane:#152137;--field:#0c1728;--line:#34465f;--orange:#ef912c;--text:#eaf0f8;--muted:#a0b3cd;--green:#6bd2a1}
@@ -161,8 +161,8 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
     <button id="quickDraftAI">ИИ: улучшить промпт</button>
     <button id="saveQuick" class="primary">Сохранить черновик</button>
    </div>
-   <p class="muted">Черновик хранится в SQLite. Готовые изображения и параметры задания хранятся на сервере.</p>
-   <details id="draftHistoryPanel" style="margin-top:12px">
+   <p class="muted">Каждый новый текст сохраняется отдельной версией в SQLite. Ищи их ниже в каталоге.</p>
+   <details id="draftHistoryPanel" style="display:none" aria-hidden="true">
     <summary>Библиотека черновиков · сохранённые версии и перевод на русский</summary>
     <p class="muted">При каждом отличающемся сохранении создаётся версия. Перевод через локальную Ollama — только по кнопке.</p>
     <div class="toolbar">
@@ -172,6 +172,23 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
      <button id="refreshDrafts">↻ Список</button>
     </div>
     <pre id="draftHistoryPreview" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow-y:auto" aria-live="polite"></pre>
+   </details>
+   <details id="catalogPanel" style="margin-top:12px">
+    <summary>📚 Каталог черновиков · поиск, перевод, рисунки и оценки</summary>
+    <p class="muted">История не перезаписывается. Перевод кэшируется и хранится вместе с оригиналом. Во время генерации GPU перевод откладывается.</p>
+    <div class="catalog-tools">
+     <input id="catalogSearch" placeholder="Поиск по тексту, переводу, названию, заметкам..." aria-label="Поиск черновиков">
+     <select id="catalogSort" aria-label="Порядок"><option value="newest">Сначала новые</option><option value="oldest">Сначала старые</option><option value="rating">Сначала лучшие</option></select>
+     <select id="catalogMinRating" aria-label="Фильтр оценок"><option value="0">Любая оценка</option><option value="3">От 3 ★</option><option value="4">От 4 ★</option><option value="5">5 ★</option></select>
+     <label><input type="checkbox" id="catalogImagesOnly"> С изображениями</label>
+     <button id="catalogRefresh">↻ Найти</button>
+    </div>
+    <div class="catalog-cols">
+     <div><div id="catalogList" class="catalog-list"></div>
+      <div class="catalog-pager"><button id="catalogPrev">← Назад</button><span id="catalogCount" class="catalog-meta">Открой каталог</span><button id="catalogNext">Вперёд →</button></div>
+     </div>
+     <div id="catalogDetail" class="catalog-detail">Выбери черновик слева, чтобы увидеть оба промпта и связанные изображения.</div>
+    </div>
    </details>
    <details id="promptExamplesPanel" style="margin-top:12px">
     <summary>Каталог промптов с реальными примерами изображений</summary>
@@ -966,7 +983,7 @@ $('translateDraft').onclick=()=>task(async()=>{
 });
 $('saveQuick').onclick=()=>task(async()=>{
  const d=await api('/api/quick/draft/saved','PUT',
-  {prompt:$('quickPrompt').value,negative_prompt:$('quickNegative').value});
+  {prompt:$('quickPrompt').value,negative_prompt:$('quickNegative').value,auto_translate:true});
  await refreshDraftLibrary(d.draft_id);
  say('Черновик #'+d.draft_id+' сохранён в SQLite');
 });
@@ -977,7 +994,7 @@ $('quickDraftAI').onclick=()=>task(async()=>{
  $('quickPrompt').value=result.prompt;$('quickNegative').value=result.negative_prompt||'';
  rememberSetting('quickPrompt');rememberSetting('quickNegative');
  const d=await api('/api/quick/draft/saved','PUT',
-  {prompt:result.prompt,negative_prompt:result.negative_prompt||''});
+  {prompt:result.prompt,negative_prompt:result.negative_prompt||'',auto_translate:true});
  await refreshDraftLibrary(d.draft_id);
  say('Промпт подготовлен и сохранён — проверь перед генерацией');
 });
@@ -1167,4 +1184,4 @@ restorePageSettings();
 translate();
 startup().catch(e=>say(e.message));
 
-</script></body></html>
+</script><script src="/static/js/draft_catalog.js"></script></body></html>

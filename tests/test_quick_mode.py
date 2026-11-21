@@ -97,6 +97,48 @@ class QuickModeTests(unittest.TestCase):
             self.assertFalse((path/filename).exists())
             self.assertEqual(self.client.delete("/api/references/"+filename).status_code,404)
 
+    def test_prompt_gallery_uses_real_completed_images_and_seed(self):
+        import os
+        from PIL import Image
+        jid="b"*32
+        folder=Path(self.temp.name)/"jobs"/jid
+        (folder/"images").mkdir(parents=True)
+        Image.new("RGB",(16,20),"orange").save(folder/"images"/"000_00_v01.png")
+        (folder/"spec.json").write_text(json.dumps({
+            "lesson":0,"slide":0,"source":"quick",
+            "prompt":"Ginger kitten","negative_prompt":"blurry","mode":"txt2img",
+            "checkpoint":"sdxl-base-1","seed":0,"steps":28,"cfg":6.5,
+            "width":768,"height":960,"strength":0.55,"lora":""
+        }),encoding="utf-8")
+        jobs=[{"job_id":jid,"source":"quick","status":"completed"}]
+        state={"status":"completed","outputs":[{"variant":1,"seed":424242}]}
+        with patch.object(studio_app,"DATA",Path(self.temp.name)), \\
+             patch.object(studio_app,"recent_jobs",return_value=jobs), \\
+             patch.object(studio_app,"get_job",return_value=state):
+            resp=self.client.get("/api/prompt-gallery")
+            self.assertEqual(resp.status_code,200)
+            data=resp.get_json()["examples"]
+        self.assertEqual(len(data),1)
+        self.assertEqual(data[0]["prompt"],"Ginger kitten")
+        self.assertEqual(data[0]["negative_prompt"],"blurry")
+        self.assertEqual(data[0]["seed"],424242)
+        self.assertEqual(data[0]["checkpoint"],"sdxl-base-1")
+        self.assertEqual(data[0]["image_url"],"/api/jobs/"+jid+"/images/1")
+
+    def test_prompt_gallery_never_invents_image_when_png_is_missing(self):
+        jid="c"*32
+        folder=Path(self.temp.name)/"jobs"/jid
+        folder.mkdir(parents=True)
+        (folder/"spec.json").write_text(json.dumps({"prompt":"A real kitten","mode":"txt2img"}),
+                                        encoding="utf-8")
+        jobs=[{"job_id":jid,"source":"quick","status":"completed"}]
+        state={"status":"completed","outputs":[{"variant":1,"seed":11}]}
+        with patch.object(studio_app,"DATA",Path(self.temp.name)), \\
+             patch.object(studio_app,"recent_jobs",return_value=jobs), \\
+             patch.object(studio_app,"get_job",return_value=state):
+            response=self.client.get("/api/prompt-gallery")
+        self.assertEqual(response.get_json()["examples"],[])
+
     def test_empty_prompt_never_starts_gpu(self):
         r=self.client.post("/api/quick/generate",json={"prompt":""})
         self.assertEqual(r.status_code,400)

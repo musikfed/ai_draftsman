@@ -724,7 +724,7 @@ def job_image(job_id,variant):
 
 # One Flask process, no second service: cached auto translation runs only while GPU idle.
 QUEUE_AUTO_TRANSLATION=draft_catalog.register(
-    app,connection,lambda: DATA,OLLAMA_URL,OLLAMA_MODEL,current_job,get_job)
+    app,lambda: connection(),lambda: DATA,OLLAMA_URL,OLLAMA_MODEL,current_job,get_job)
 
 if __name__=="__main__":
     app.run(host=os.getenv("DRAFTSMAN_HOST","0.0.0.0"),

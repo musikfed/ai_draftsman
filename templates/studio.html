@@ -61,6 +61,12 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
 .metric{min-width:0;background:var(--field);border:1px solid var(--line);border-radius:7px;padding:8px}
 .metric strong{display:block;font-size:15px}.metric small{display:block;color:var(--muted);font-size:11px}
 #disks{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}#disks .metric{flex:1 1 150px;padding:6px 9px}
+.prompt-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin:10px 0}
+.prompt-example{border:1px solid var(--line);border-radius:9px;padding:8px;background:#10233d;display:flex;flex-direction:column;gap:7px;min-width:0}
+.prompt-example img{display:block;max-width:100%;height:160px;width:100%;object-fit:contain;border-radius:5px;background:#0b1728}
+.prompt-example .example-text{font-size:12px;color:var(--muted);word-wrap:break-word}
+.prompt-example .example-meta{font-size:11px;color:var(--muted);line-height:1.4}
+.prompt-example button{align-self:start}
 #previews{display:flex;flex-wrap:wrap;gap:7px}#previews img{width:140px;height:175px;object-fit:contain;border:1px solid var(--line);border-radius:6px}
 #notices{font-size:12px;color:var(--muted)}.collapsed{display:none}
 .mode-tabs{margin:0 0 12px}.mode-tabs button.chosen{background:#ba5f18;border-color:#f2a248}
@@ -166,6 +172,12 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
      <button id="refreshDrafts">↻ Список</button>
     </div>
     <pre id="draftHistoryPreview" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow-y:auto" aria-live="polite"></pre>
+   </details>
+   <details id="promptExamplesPanel" style="margin-top:12px">
+    <summary>Каталог промптов с реальными примерами изображений</summary>
+    <p class="muted">Здесь только уже созданные картинки и точные параметры их генерации. По одному тексту воспроизведение не гарантируется; для сравнения нужен фиксированный Seed и тот же checkpoint.</p>
+    <button id="refreshPromptExamples">↻ Обновить каталог</button>
+    <div id="promptGallery" class="prompt-gallery"></div>
    </details>
   </div>
   <div class="panel">
@@ -860,6 +872,63 @@ function switchMode(next){
 }
 $('quickTab').onclick=()=>switchMode('quick');
 $('graphTab').onclick=()=>switchMode('graph');
+async function refreshPromptExamples(){
+ const response=await api('/api/prompt-gallery'),items=response.examples||[],panel=$('promptGallery');
+ panel.replaceChildren();
+ if(!items.length){
+  const empty=document.createElement('p');
+  empty.className='muted';empty.textContent='В каталоге ещё нет завершённых быстрых генераций. Создай первый рисунок — он появится здесь.';
+  panel.append(empty);return;
+ }
+ for(const example of items){
+  const card=document.createElement('div');card.className='prompt-example';
+  const img=document.createElement('img');img.src=example.image_url;img.alt='Реальный результат сохранённой генерации';img.loading='lazy';
+  const name=document.createElement('div');name.className='example-text';
+  name.textContent=example.prompt.length>140?example.prompt.slice(0,137)+'...':example.prompt;
+  const detail=document.createElement('div');detail.className='example-meta';
+  detail.textContent=example.checkpoint+' · Seed '+example.seed+
+   ' · '+example.steps+' шагов · CFG '+example.cfg+
+   ' · '+example.width+'×'+example.height+
+   (example.lora?' · LoRA '+example.lora:' · без LoRA');
+  const action=document.createElement('button');
+  action.textContent='Загрузить промпт и настройки';
+  action.onclick=()=>{
+   switchMode('quick');
+   $('quickPrompt').value=example.prompt;
+   $('quickNegative').value=example.negative_prompt;
+   rememberSetting('quickPrompt');rememberSetting('quickNegative');
+   const fields={seed:String(example.seed),steps:String(example.steps),cfg:String(example.cfg),
+    variants:'1',resolution:example.width+'x'+example.height,strength:String(example.strength)};
+   for(const [id,value] of Object.entries(fields)){
+    const el=$(id);if(el.tagName!=='SELECT'||Array.from(el.options).some(o=>o.value===value)){
+     el.value=value;rememberSetting(id);
+    }
+   }
+   const checkpoint=$('imageCheckpoint');
+   if(Array.from(checkpoint.options).some(o=>o.value===example.checkpoint)){
+    checkpoint.value=example.checkpoint;
+    try{localStorage.setItem('draftsman_checkpoint',example.checkpoint)}catch(e){}
+   }
+   const ref=$('reference'),lora=$('lora');
+   const refValid=example.mode==='img2img'&&Array.from(ref.options).some(o=>o.value===example.reference);
+   const loraValid=Array.from(lora.options).some(o=>o.value===example.lora);
+   ref.value=refValid?example.reference:'';rememberSetting('reference');
+   lora.value=loraValid?example.lora:'';rememberSetting('lora');
+   $('renderMode').value=refValid?'img2img':'txt2img';rememberSetting('renderMode');
+   updateReferencePreview();
+   $('referenceFile').value='';
+   say('Промпты и параметры примера загружены. '+(example.mode==='img2img'&&!refValid?
+    'Исходный референс отсутствует, выбран режим по описанию. ':'')+
+    (!loraValid&&example.lora?'LoRA отсутствует; она отключена. ':'')+
+    'Генерация не запускается автоматически.');
+  };
+  card.append(img,name,detail,action);panel.append(card);
+ }
+}
+$('promptExamplesPanel').addEventListener('toggle',()=>{
+ if($('promptExamplesPanel').open)task(refreshPromptExamples);
+});
+$('refreshPromptExamples').onclick=()=>task(refreshPromptExamples);
 async function refreshDraftLibrary(selected){
  const r=await api('/api/quick/drafts'),rows=r.drafts||[];
  const old=String(selected||$('draftHistorySelect').value||'');
@@ -923,7 +992,7 @@ function renderWaiting(total,completed=0){
   for(let i=0;i<visible;i++){
    const card=document.createElement('div');card.className='wait-slot';
    const turtle=document.createElement('img');turtle.className='wait-turtle';
-   turtle.src='/static/images/sea-turtle.webp';turtle.alt='';
+   turtle.src='/static/images/sea-turtle-cartoon.svg';turtle.alt='';
    turtle.width=230;turtle.height=160;turtle.decoding='async';
    turtle.setAttribute('aria-hidden','true');card.append(turtle);
    const caption=document.createElement('span');caption.className='wait-caption';card.append(caption);

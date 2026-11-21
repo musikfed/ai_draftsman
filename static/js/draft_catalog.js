@@ -129,7 +129,11 @@ async function choose(id){
    d.prompt_ru===null?'Перевод готовится автоматически один раз...':d.prompt_ru,false);
   const translatedNeg=textfield('Негативный промпт · русский перевод',
    d.negative_prompt_ru===null?'Перевод ожидается...':d.negative_prompt_ru,false);
-  root.append(orig.box,negative.box,translated.box,translatedNeg.box);
+  const positiveRow=document.createElement('div');positiveRow.className='catalog-prompt-pair';
+  positiveRow.append(orig.box,translated.box);
+  const negativeRow=document.createElement('div');negativeRow.className='catalog-prompt-pair';
+  negativeRow.append(negative.box,translatedNeg.box);
+  root.append(positiveRow,negativeRow);
   const note=textfield('Заметка (что понравилось, что исправить)',d.note,!d.archived);
   root.append(note.box);
   const buttons=label('div','','catalog-foot');
@@ -141,6 +145,7 @@ async function choose(id){
     localStorage.setItem('draftsman_setting_quickPrompt',d.prompt);
     localStorage.setItem('draftsman_setting_quickNegative',d.negative_prompt);
    }catch(e){}
+   document.dispatchEvent(new CustomEvent('draftsman:draft-restored',{detail:{draft_id:id}}));
    notice('Черновик #'+id+' открыт в редакторе. Старые версии не изменены.');
   };
   const save=label('button','Сохранить название и заметку');

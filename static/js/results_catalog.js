@@ -3,7 +3,9 @@
 'use strict';
 const E=id=>document.getElementById(id);
 if(!E('resultsSection'))return;
-const state={page:1,pages:1,request:0,lastRefresh:0};
+const state={page:1,pages:1,request:0,lastRefresh:0,
+ shelfPage:1,shelfPages:1,shelfRequest:0,shelfSelectedKey:''};
+try{state.shelfSelectedKey=localStorage.getItem('draftsman_selected_sketch')||''}catch(e){}
 const make=(tag,text='',cls='')=>{
  const node=document.createElement(tag);
  node.textContent=String(text);
@@ -18,7 +20,17 @@ async function api(url,method='GET',data){
  return json;
 }
 function note(t){E('resultsPage').textContent=t}
-function opening(jobId){
+function selectSketch(jobId,variant){
+ state.shelfSelectedKey=jobId+':'+variant;
+ try{localStorage.setItem('draftsman_selected_sketch',state.shelfSelectedKey)}catch(e){}
+ for(const item of E('quickShelfGrid').querySelectorAll('.quick-shelf-item')){
+  const active=item.dataset.key===state.shelfSelectedKey;
+  item.classList.toggle('selected',active);
+  item.setAttribute('aria-pressed',active?'true':'false');
+ }
+}
+function opening(jobId,variant=1){
+ selectSketch(jobId,variant);
  E('quickTab').click();
  document.dispatchEvent(new CustomEvent('draftsman:open-result',{detail:{job_id:jobId}}));
 }
@@ -49,7 +61,7 @@ function box(item){
  card.append(make('div','Черновик #'+item.draft_id+
   ' · вариант '+item.variant+' · Seed '+(item.seed??'—'),'result-sub'));
  const actions=make('div','','result-actions');
- actions.append(button('Открыть',()=>opening(item.job_id)));
+ actions.append(button('Открыть',()=>opening(item.job_id,item.variant)));
  actions.append(button('Черновик',()=>{
   E('quickTab').click();
   document.dispatchEvent(new CustomEvent('draftsman:catalog-open',{detail:{draft_id:item.draft_id}}));
@@ -90,24 +102,54 @@ async function loadResults(reset=false){
 }
 async function loadShelf(){
  if(document.hidden)return;
+ const token=++state.shelfRequest;
+ const page=state.shelfPage;
  try{
-  const response=await api('/api/quick/results?page=1&size=8&sort=newest&archive=all');
-  const target=E('quickShelfGrid');
-  target.replaceChildren();
+  const response=await api('/api/quick/results?page='+page+'&size=8&sort=newest&archive=all');
+  if(token!==state.shelfRequest)return;
+  state.shelfPages=response.pages||1;
+  if(page>state.shelfPages){state.shelfPage=state.shelfPages;return loadShelf()}
+  const target=E('quickShelfGrid');target.replaceChildren();
   for(const item of response.results){
-   const a=document.createElement('a');
-   a.href='#';a.title='R-'+String(item.index).padStart(6,'0')+' · '+item.title;
-   a.onclick=e=>{e.preventDefault();opening(item.job_id)};
+   const key=item.job_id+':'+item.variant;
+   const chosen=key===state.shelfSelectedKey;
+   const entry=document.createElement('button');
+   entry.type='button';entry.className='quick-shelf-item'+(chosen?' selected':'');
+   entry.dataset.key=key;entry.title='R-'+String(item.index).padStart(6,'0')+' · '+item.title;
+   entry.setAttribute('aria-pressed',chosen?'true':'false');
+   entry.setAttribute('aria-label','Выбрать эскиз R-'+String(item.index).padStart(6,'0'));
+   entry.onclick=()=>opening(item.job_id,item.variant);
    const image=document.createElement('img');image.src=item.image_url;
    image.alt=item.title;image.loading='lazy';
-   a.append(image,make('div','R-'+String(item.index).padStart(6,'0')+
-     ' · '+item.title,'shelf-title'));
-   target.append(a);
+   entry.append(image,make('div','R-'+String(item.index).padStart(6,'0')+
+    ' · '+item.title,'shelf-title'));
+   target.append(entry);
   }
   if(!response.results.length)target.append(make('span',
-   'Пока нет готовых изображений. Сгенерируй первый эскиз.','catalog-meta'));
- }catch(e){E('quickShelfGrid').replaceChildren(make('span','Эскизы временно недоступны.','catalog-meta'))}
+   'Пока нет готовых эскизов.','catalog-meta'));
+  E('quickShelfPrev').disabled=state.shelfPage<=1;
+  E('quickShelfNext').disabled=state.shelfPage>=state.shelfPages;
+  const first=response.total?(state.shelfPage-1)*8+1:0;
+  const last=Math.min(response.total,state.shelfPage*8);
+  E('quickShelfStatus').textContent=first+'–'+last+' из '+response.total+
+   ' · страница '+state.shelfPage+'/'+state.shelfPages+
+   ' · кликни эскиз, чтобы выделить и открыть справа';
+ }catch(e){
+  E('quickShelfStatus').textContent='Не удалось загрузить эскизы: '+e.message;
+ }
 }
+E('quickShelfPrev').onclick=()=>{
+ if(state.shelfPage>1){state.shelfPage--;loadShelf()}
+};
+E('quickShelfNext').onclick=()=>{
+ if(state.shelfPage<state.shelfPages){state.shelfPage++;loadShelf()}
+};
+E('quickShelfGrid').addEventListener('wheel',event=>{
+ const grid=E('quickShelfGrid');
+ if(grid.scrollWidth<=grid.clientWidth||!event.deltaY||Math.abs(event.deltaX)>Math.abs(event.deltaY))return;
+ event.preventDefault();
+ grid.scrollLeft+=event.deltaY;
+},{passive:false});
 E('resultsRefresh').onclick=()=>loadResults(true);
 E('resultsPrev').onclick=()=>{if(state.page>1){state.page--;loadResults()}};
 E('resultsNext').onclick=()=>{if(state.page<state.pages){state.page++;loadResults()}};
@@ -120,7 +162,7 @@ for(const id of ['resultsSort','resultsArchive']){
 }
 E('resultsTab').addEventListener('click',()=>loadResults(true));
 document.addEventListener('draftsman:job-completed',()=>{
- loadShelf();
+ state.shelfPage=1;loadShelf();
  if(!E('resultsSection').classList.contains('collapsed'))loadResults(true);
 });
 document.addEventListener('visibilitychange',()=>{

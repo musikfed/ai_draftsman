@@ -45,6 +45,37 @@ async function regenerate(draftId,seedMode='random'){
   note('Создана новая версия #'+result.draft_id+', GPU задание запущено.');
  }catch(e){note('Не удалось перегенерировать: '+e.message)}
 }
+async function deleteResult(item,control){
+ const title='R-'+String(item.index).padStart(6,'0');
+ if(item.archived){
+  note('Архив только для чтения: сначала верни черновик #'+item.draft_id+' из архива');
+  return;
+ }
+ if(!confirm('НАВСЕГДА удалить '+title+' — '+item.title+
+  '?\\nБудут удалены PNG, полноразмерный master PNG, оценка и запись результата в SQLite. '+
+  'Черновик и остальные рисунки сохранятся. Отменить удаление после подтверждения нельзя.'))return;
+ control.disabled=true;
+ try{
+  const response=await api('/api/quick/results/'+item.index,'DELETE');
+  if(state.shelfSelectedKey===item.job_id+':'+item.variant){
+   state.shelfSelectedKey='';
+   try{localStorage.removeItem('draftsman_selected_sketch')}catch(e){}
+  }
+  await loadResults(false);
+  await loadShelf();
+  document.dispatchEvent(new CustomEvent('draftsman:result-deleted',{
+   detail:{job_id:item.job_id,variant:item.variant,result_id:item.index}
+  }));
+  const warning=response.cleanup_warnings?.length?
+   ' Внимание: часть файлов ожидает очистки в .delete-staging.':'';
+  note('Удалён '+title+' из SQLite и галереи. Файлов удалено: '+
+    response.files_removed+'.'+warning);
+ }catch(e){
+  note('Удаление '+title+' не выполнено: '+e.message);
+ }finally{
+  control.disabled=false;
+ }
+}
 function button(text,click){
  const b=make('button',text);b.type='button';b.onclick=click;return b;
 }
@@ -66,6 +97,12 @@ function box(item){
   E('quickTab').click();
   document.dispatchEvent(new CustomEvent('draftsman:catalog-open',{detail:{draft_id:item.draft_id}}));
  }));
+ const remove=button('Удалить',()=>deleteResult(item,remove));
+ remove.className='delete-result';
+ remove.title=item.archived?'Архив только для чтения — сначала разархивируй':
+  'Безвозвратно удалить этот вариант и его запись из SQLite';
+ remove.disabled=Boolean(item.archived);
+ actions.append(remove);
  actions.append(button('Перегенерировать',()=>regenerate(item.draft_id)));
  actions.append(button(item.archived?'Вернуть из архива':'В архив',async()=>{
   if(!confirm((item.archived?'Разархивировать':'Зафиксировать только для чтения')+
@@ -89,6 +126,7 @@ async function loadResults(reset=false){
   const response=await api('/api/quick/results?'+query);
   if(token!==state.request)return;
   state.pages=response.pages;
+  if(state.page>state.pages){state.page=state.pages;return loadResults(false)}
   const grid=E('resultsGrid');grid.replaceChildren(...response.results.map(box));
   if(!response.results.length)grid.append(make('p',
    'Здесь появятся завершённые генерации. Историю PNG не удаляли.','catalog-empty'));

@@ -50,10 +50,13 @@ def delete_single_result(result_id: int, connection, data_root: Path, get_job):
         if job.get("status") not in ("completed", "failed"):
             return {"error": "Cannot delete a result while its worker may be running"}, 409
 
-        folder = (Path(data_root) / "jobs" / job_id).resolve()
+        root = (Path(data_root) / "jobs").resolve()
+        folder = (root / job_id).resolve()
         image_dir = (folder / "images").resolve()
         manifest = folder / "state.json"
-        if image_dir.parent != folder or not manifest.is_file() or manifest.is_symlink():
+        if (folder.parent != root or image_dir.parent != folder or
+                (folder / "images").is_symlink() or
+                not manifest.is_file() or manifest.is_symlink()):
             return {"error": "Unsafe or missing job manifest"}, 409
 
         state = read_json(manifest)
@@ -95,6 +98,8 @@ def delete_single_result(result_id: int, connection, data_root: Path, get_job):
             [*state.get("deleted_variants", []), variant]
         ))
         staging = folder / ".delete-staging"
+        if staging.is_symlink() or staging.resolve().parent != folder:
+            return {"error": "Unsafe staging directory"}, 409
         try:
             staging.mkdir(mode=0o700, exist_ok=True)
             for path in files:

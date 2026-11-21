@@ -514,7 +514,14 @@ def quick_draft_translate(draft_id):
 def quick_saved():
     with connection() as db:
         row=db.execute("SELECT prompt,negative_prompt,updated_at FROM quick_draft WHERE id=1").fetchone()
-    return jsonify(dict(row) if row else {"prompt":"","negative_prompt":"","updated_at":None})
+        if row is None:
+            return jsonify(prompt="",negative_prompt="",updated_at=None,draft_id=None)
+        result=dict(row)
+        latest=db.execute("""SELECT id FROM quick_draft_history
+            WHERE prompt=? AND negative_prompt=? ORDER BY id DESC LIMIT 1""",
+            (result["prompt"],result["negative_prompt"])).fetchone()
+        result["draft_id"]=latest["id"] if latest else None
+    return jsonify(result)
 
 
 @app.put("/api/quick/draft/saved")

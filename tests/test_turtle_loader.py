@@ -18,7 +18,14 @@ class TurtleWaitingUITests(unittest.TestCase):
 
     def test_loader_uses_image_not_font_emoji(self):
         html=(BASE/"templates"/"studio.html").read_text(encoding="utf-8")
-        self.assertIn("turtle.src='/static/images/sea-turtle.webp'",html)
+        self.assertIn("const asset='/static/images/sea-turtle.webp'",html)
+        self.assertIn("createSwimmingTurtle(i)",html)
+        self.assertIn("turtle-body-mask-",html)
+        self.assertIn("turtle-left-clip-",html)
+        self.assertIn("turtle-right-clip-",html)
+        self.assertIn("@keyframes turtle-paddle-left",html)
+        self.assertIn("@keyframes turtle-paddle-right",html)
+        self.assertIn(".wait-turtle-flipper,.wait-bubble{animation:none!important}",html)
         self.assertNotIn("turtle.textContent='🐢'",html)
         self.assertIn("@keyframes sea-turtle-swim",html)
         self.assertIn("@keyframes bubble-float",html)

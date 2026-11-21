@@ -1035,8 +1035,8 @@ $('generate').onclick=()=>task(async()=>{
     if(!prompt)throw Error('Напиши, что нужно нарисовать');
     const negative_prompt=$('quickNegative').value;
     const conflicts=conflictingPromptRules(prompt,negative_prompt);
-    if(conflicts.length&&!confirm('ПРОТИВОРЕЧИЕ: негативный промпт запрещает то, что запрошено в положительном ('+
-     conflicts.join(', ')+'). Исправить перед запуском? Нажми ОК для отмены или Отмена, чтобы продолжить генерацию.'))return;
+    if(conflicts.length&&!confirm('ПРОТИВОРЕЧИЕ: отрицательный промпт запрещает '+conflicts.join(', ')+
+     ', хотя положительный их запрашивает. Продолжить генерацию несмотря на противоречие?'))return;
     const d=await api('/api/quick/draft/saved','PUT',{prompt,negative_prompt});
     await refreshDraftLibrary(d.draft_id);
     response=await api('/api/quick/generate','POST',{...settings,prompt,negative_prompt});

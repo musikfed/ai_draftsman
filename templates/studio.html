@@ -256,6 +256,7 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
    <label data-t="reference">Изображение-образец (только для img2img)</label><select id="reference"><option value="">Без референса</option></select>
    <div class="toolbar"><input id="referenceFile" type="file" accept=".jpg,.jpeg,.png,.webp" class="grow"><button id="uploadReference" data-t="upload">Добавить образец</button><button id="deleteReference" class="danger">Удалить образец</button></div>
    <div id="referenceHint" class="muted">Для img2img выбери файл и нажми «Добавить образец».</div>
+   <img id="referencePreview" class="collapsed" alt="Предпросмотр выбранного образца" style="display:block;max-width:185px;max-height:240px;object-fit:contain;margin:8px 0;border-radius:7px;border:1px solid #43607d">
    <label>SDXL LoRA</label><select id="lora"><option value="">Без LoRA</option></select>
    <div class="toolbar" style="margin-top:10px"><button id="generate" class="primary" data-t="generate">Генерировать</button><button id="checkJob" data-t="checkJob">Проверить результат</button><button id="demoWait">🌊 Демо ожидания</button><button id="resetRenderSettings">↺ Сбросить параметры</button></div>
    <div id="jobProgress" class="collapsed"><div class="muted" id="jobStage">Загрузка модели</div><progress id="jobBar" max="100" value="0"></progress><div id="waitGrid" class="wait-grid"></div></div>
@@ -474,11 +475,22 @@ async function refreshLLM(preferred){
  $('quickLLM').value=q;
  $('llmInfo').textContent=list.length?'Установлено '+list.length+' моделей: '+list.join(', ')+'. Новые загрузки Ollama могут попасть на системный диск.':'Ollama не отвечает; проверь службу.';
 }
+function updateReferencePreview(){
+ const filename=$('reference').value,preview=$('referencePreview');
+ if(filename){
+  preview.src='/api/references/'+encodeURIComponent(filename)+'/preview';
+  preview.classList.remove('collapsed');
+ }else{
+  preview.classList.add('collapsed');
+  preview.removeAttribute('src');
+ }
+}
 async function refreshResources(){
  const r=await api('/api/references');
  const old=readSetting('reference')??$('reference').value;
  $('reference').replaceChildren(opt('','Без референса'),...r.references.map(x=>opt(x,x)));
  if(r.references.includes(old))$('reference').value=old;
+ updateReferencePreview();
  const l=await api('/api/loras');
  const oldLora=readSetting('lora')??$('lora').value;
  $('lora').replaceChildren(opt('','Без LoRA'),...l.loras.map(x=>opt(x,x)));
@@ -803,6 +815,7 @@ $('referenceFile').addEventListener('change',()=>{
 $('reference').addEventListener('change',()=>{
  if($('reference').value){$('renderMode').value='img2img';rememberSetting('renderMode')}
  $('referenceHint').textContent=$('reference').value?'Загруженный образец выбран · режим «По образцу»':'Без активного образца';
+ updateReferencePreview();
 });
 $('uploadReference').onclick=()=>task(async()=>{
  const f=$('referenceFile').files[0];if(!f)throw Error('Сначала выбери PNG/JPEG/WEBP');
@@ -811,6 +824,7 @@ $('uploadReference').onclick=()=>task(async()=>{
  await refreshResources();$('reference').value=r.filename;
  $('renderMode').value='img2img';$('referenceFile').value='';
  rememberSetting('reference');rememberSetting('renderMode');
+ updateReferencePreview();
  $('referenceHint').textContent='Образец загружен · режим «По образцу»';
  say('Образец загружен, выбран и включён');
 });
@@ -830,6 +844,7 @@ $('resetRenderSettings').onclick=()=>{
   strength:'0.55',renderMode:'txt2img',reference:'',lora:''};
  for(const [id,value] of Object.entries(defaults)){$(id).value=value;rememberSetting(id)}
  $('referenceFile').value='';
+ updateReferencePreview();
  $('referenceHint').textContent='Сброшено: по описанию, без референса и LoRA.';
  say('Параметры сброшены без удаления изображений и черновиков');
 };

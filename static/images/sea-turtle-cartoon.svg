@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="400" viewBox="0 0 680 400" role="img" aria-label="Весёлая морская черепаха плывёт">
+<title>Весёлая морская черепаха — анимированный SVG</title>
+<desc>Авторская мультяшная черепаха с голубыми глазами, улыбкой, медным панцирем и широкими зелёными ластами. Оба передних ласта независимо гребут, корпус не разрезается.</desc>
+<defs>
+<linearGradient id="skin" x1=".1" y1="0" x2=".8" y2="1"><stop stop-color="#c9e388"/><stop offset=".45" stop-color="#9ac257"/><stop offset="1" stop-color="#679241"/></linearGradient>
+<linearGradient id="light" x1=".1" y1="0" x2=".8" y2="1"><stop stop-color="#e9f3ad"/><stop offset=".4" stop-color="#bedd80"/><stop offset="1" stop-color="#77a354"/></linearGradient>
+<linearGradient id="dark" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#b7d370"/><stop offset=".5" stop-color="#719e4f"/><stop offset="1" stop-color="#466f3e"/></linearGradient>
+<linearGradient id="shell" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#97603e"/><stop offset=".6" stop-color="#65422d"/><stop offset="1" stop-color="#3a2c26"/></linearGradient>
+<linearGradient id="belly" x1="0" y1="0" x2=".6" y2="1"><stop stop-color="#fff2c3"/><stop offset=".5" stop-color="#f5d59a"/><stop offset="1" stop-color="#dda879"/></linearGradient>
+<radialGradient id="iris"><stop stop-color="#80ddec"/><stop offset=".66" stop-color="#2589b7"/><stop offset="1" stop-color="#174c80"/></radialGradient>
+<clipPath id="shell-edge"><path d="M180 220 Q168 170 206 130 Q246 91 309 97 Q380 100 416 149 Q444 180 432 235 Q401 260 354 271 Q255 283 203 253Z"/></clipPath>
+<clipPath id="head-edge"><path d="M399 159 C392 117 418 78 463 65 Q491 58 517 79 Q550 58 579 82 C609 98 607 139 597 162 Q623 185 605 222 C585 250 558 259 528 250 Q485 268 440 252 C405 238 391 200 399 159Z"/></clipPath>
+<pattern id="pebbles" width="31" height="27" patternUnits="userSpaceOnUse"><ellipse cx="8" cy="11" rx="4" ry="2.7" fill="#f9ecae" opacity=".32"/><ellipse cx="24" cy="23" rx="3" ry="2" fill="#345d35" opacity=".18"/></pattern>
+</defs>
+<style>
+.ink{stroke:#2b402b;stroke-linejoin:round;stroke-linecap:round}
+.fin-left{transform-box:view-box;transform-origin:299px 239px;animation:paddle-left 2.8s ease-in-out infinite}
+.fin-right{transform-box:view-box;transform-origin:554px 238px;animation:paddle-right 2.8s ease-in-out infinite}
+.fin-rear{transform-box:view-box;transform-origin:273px 266px;animation:paddle-rear 3.7s ease-in-out infinite}
+@keyframes paddle-left{0%,100%{transform:rotate(7deg)}25%{transform:rotate(-13deg)}50%{transform:rotate(-2deg)}76%{transform:rotate(13deg)}}
+@keyframes paddle-right{0%,100%{transform:rotate(-8deg)}25%{transform:rotate(12deg)}50%{transform:rotate(3deg)}76%{transform:rotate(-13deg)}}
+@keyframes paddle-rear{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(5deg)}}
+@media(prefers-reduced-motion:reduce){.fin-left,.fin-right,.fin-rear{animation:none!important}}
+</style>
+<!-- Rear flippers underneath shell -->
+<g class="fin-rear"><path class="ink" d="M271 255 Q224 274 166 326 Q152 343 168 350 Q196 349 225 327 L302 282Z" fill="url(#dark)" stroke-width="4"/><path d="M181 335 Q217 315 251 284" stroke="#e1ee9d" stroke-width="3" opacity=".44" fill="none"/><ellipse cx="194" cy="331" rx="13" ry="7" fill="#6c9955" stroke="#40683c" stroke-width="2"/><ellipse cx="226" cy="304" rx="8" ry="5" fill="#709a54"/></g>
+<path class="ink" d="M365 254 Q344 296 301 357 Q290 374 307 382 Q326 380 350 355 L395 283Z" fill="url(#dark)" stroke-width="4"/><path d="M307 369 Q335 344 357 300" fill="none" stroke="#d5e39d" stroke-width="3" opacity=".5"/>
+<!-- Golden plastron belly -->
+<path class="ink" d="M282 213 Q346 210 391 210 Q446 203 474 224 Q493 249 469 275 Q438 306 374 310 Q311 315 264 288 Q237 269 254 242Z" fill="url(#belly)" stroke-width="4.5"/>
+<path d="M277 266 Q359 282 464 264 M326 224 Q319 270 341 306 M389 219 Q378 277 391 304 M437 226 Q453 251 449 281" stroke="#b48b64" stroke-width="2.3" opacity=".55" fill="none"/>
+<!-- Detailed segmented copper-brown shell -->
+<path class="ink" d="M180 220 Q168 170 206 130 Q246 91 309 97 Q380 100 416 149 Q444 180 432 235 Q401 260 354 271 Q255 283 203 253Z" fill="url(#shell)" stroke-width="5"/>
+<g clip-path="url(#shell-edge)">
+<path d="M189 204 Q190 154 230 132 Q270 104 307 113 L279 173 L232 215Z" fill="#b46b3b" stroke="#d99759" stroke-width="6"/>
+<path d="M307 113 Q364 109 399 147 L375 199 L279 173Z" fill="#a95e3e" stroke="#df9659" stroke-width="6"/>
+<path d="M232 215 L279 173 L375 199 L348 260 L256 258Z" fill="#c17944" stroke="#efa75c" stroke-width="7"/>
+<path d="M375 199 L415 155 Q444 194 429 236 L349 260Z" fill="#995533" stroke="#d38c53" stroke-width="7"/>
+<path d="M181 211 L232 215 L255 258 Q201 268 174 238Z" fill="#935439" stroke="#d9985d" stroke-width="6"/>
+<rect x="170" y="92" width="280" height="195" fill="url(#pebbles)" opacity=".49"/>
+<path d="M205 165 Q232 121 265 116 M291 114 Q348 116 384 151 M235 216 Q300 182 369 205" fill="none" stroke="#ffcb83" stroke-width="3" opacity=".38"/>
+</g>
+<path d="M193 242 Q288 295 429 232" fill="none" stroke="#eeb276" stroke-width="5" opacity=".67"/>
+<!-- Head, distinct facial design, smile -->
+<path class="ink" d="M399 159 C392 117 418 78 463 65 Q491 58 517 79 Q550 58 579 82 C609 98 607 139 597 162 Q623 185 605 222 C585 250 558 259 528 250 Q485 268 440 252 C405 238 391 200 399 159Z" fill="url(#light)" stroke-width="5"/>
+<g clip-path="url(#head-edge)"><rect x="392" y="67" width="226" height="200" fill="url(#pebbles)" opacity=".42"/></g>
+<ellipse class="ink" cx="459" cy="145" rx="36" ry="47" fill="#fffdf5" stroke-width="4.3" transform="rotate(-7 459 145)"/>
+<ellipse cx="466" cy="154" rx="23" ry="31" fill="url(#iris)"/><ellipse cx="472" cy="155" rx="13" ry="25" fill="#153449"/>
+<ellipse cx="459" cy="142" rx="9" ry="12" fill="#fff"/><circle cx="481" cy="171" r="4" fill="#e0f5ff"/>
+<ellipse class="ink" cx="551" cy="142" rx="35" ry="46" fill="#fffdf5" stroke-width="4.3" transform="rotate(7 551 142)"/>
+<ellipse cx="548" cy="150" rx="22" ry="30" fill="url(#iris)"/><ellipse cx="543" cy="150" rx="13" ry="24" fill="#163449"/>
+<ellipse cx="543" cy="139" rx="9" ry="11" fill="#fff"/><circle cx="559" cy="165" r="4" fill="#e0f5ff"/>
+<path d="M430 108 Q448 92 470 100 M539 100 Q561 86 583 105" stroke="#385939" stroke-width="3.3" fill="none" stroke-linecap="round"/>
+<ellipse cx="500" cy="97" rx="9" ry="6" fill="#83ae59" stroke="#406d40" stroke-width="1.4"/><ellipse cx="524" cy="90" rx="6" ry="4" fill="#729d54"/><ellipse cx="507" cy="113" rx="4" ry="3" fill="#557d41"/>
+<circle cx="429" cy="201" r="3" fill="#467241"/><circle cx="440" cy="207" r="4" fill="#467241"/><circle cx="446" cy="195" r="2.7" fill="#467241"/><circle cx="580" cy="201" r="3.2" fill="#467241"/><circle cx="593" cy="208" r="2.8" fill="#467241"/>
+<path class="ink" d="M451 218 Q493 244 550 214 Q568 206 574 212 Q555 249 521 259 Q477 263 451 223Z" fill="#582e30" stroke-width="3.5"/>
+<path d="M484 249 Q498 229 523 234 Q542 237 545 248 Q520 265 495 258Z" fill="#f48776"/><path d="M509 246 Q521 240 531 247" stroke="#d86765" stroke-width="2" fill="none"/>
+<path d="M451 217 Q496 241 551 213" fill="none" stroke="#325839" stroke-width="3.3" stroke-linecap="round"/>
+<ellipse cx="507" cy="200" rx="4.2" ry="5" fill="#4f763f"/><ellipse cx="527" cy="199" rx="4" ry="5" fill="#4f763f"/>
+<!-- Right front paddle extends from behind cheek, not cut with masks -->
+<g class="fin-right"><path class="ink" d="M548 239 C566 215 594 195 619 156 Q635 134 651 137 Q666 139 661 155 Q650 200 611 247 Q573 275 549 252Z" fill="url(#dark)" stroke-width="4"/><path d="M573 244 Q625 202 646 154" stroke="#e9efad" stroke-width="6" opacity=".33" fill="none"/><ellipse cx="634" cy="171" rx="13" ry="7" transform="rotate(-35 634 171)" fill="#73a053" stroke="#4e783e" stroke-width="2"/><ellipse cx="610" cy="206" rx="11" ry="7" transform="rotate(-30 610 206)" fill="#77a350" stroke="#4e783e" stroke-width="2"/></g>
+<!-- Left front paddle is one complete organic shape -->
+<g class="fin-left">
+<path class="ink" d="M299 236 Q256 215 226 223 Q186 229 136 232 Q85 229 62 211 Q47 199 50 223 Q67 263 111 276 Q190 296 267 263 Q298 256 318 247Z" fill="url(#skin)" stroke-width="4.3"/>
+<path d="M63 219 Q132 252 207 252 Q270 251 300 240" fill="none" stroke="#e6edaa" stroke-width="5" opacity=".44"/>
+<ellipse cx="113" cy="249" rx="21" ry="9" transform="rotate(15 113 249)" fill="#7daa55" stroke="#4e763f" stroke-width="2.2"/><ellipse cx="158" cy="263" rx="14" ry="7" fill="#79a755" stroke="#4e763f" stroke-width="2"/><ellipse cx="194" cy="269" rx="10" ry="5.5" fill="#7da951" stroke="#4e763f" stroke-width="1.8"/>
+</g>
+</svg>

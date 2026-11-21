@@ -795,14 +795,44 @@ document.addEventListener('visibilitychange',()=>{
   if(st.status==='running')await updateDownloadProgress();
  });
 });
+$('referenceFile').addEventListener('change',()=>{
+ $('referenceHint').textContent=$('referenceFile').files.length
+ ?'Файл выбран, но НЕ загружен. Нажми «Добавить образец», чтобы включить img2img.'
+ :'Файл образца не выбран.';
+});
+$('reference').addEventListener('change',()=>{
+ if($('reference').value){$('renderMode').value='img2img';rememberSetting('renderMode')}
+ $('referenceHint').textContent=$('reference').value?'Загруженный образец выбран · режим «По образцу»':'Без активного образца';
+});
 $('uploadReference').onclick=()=>task(async()=>{
- const f=$('referenceFile').files[0];if(!f)throw Error('Выбери PNG/JPEG/WEBP');
+ const f=$('referenceFile').files[0];if(!f)throw Error('Сначала выбери PNG/JPEG/WEBP');
  const form=new FormData();form.append('file',f);
  const r=await api('/api/references/upload','POST',form);
- await refreshResources();$('reference').value=r.filename;$('renderMode').value='img2img';
+ await refreshResources();$('reference').value=r.filename;
+ $('renderMode').value='img2img';$('referenceFile').value='';
  rememberSetting('reference');rememberSetting('renderMode');
- say('Образец загружен');
+ $('referenceHint').textContent='Образец загружен · режим «По образцу»';
+ say('Образец загружен, выбран и включён');
 });
+$('deleteReference').onclick=()=>task(async()=>{
+ const name=$('reference').value;
+ if(!name){say('Выбери загруженный образец');return}
+ if(!confirm('Удалить образец '+name+' из студии? Готовые результаты останутся.'))return;
+ await api('/api/references/'+encodeURIComponent(name),'DELETE');
+ try{localStorage.removeItem('draftsman_setting_reference')}catch(e){}
+ $('reference').value='';await refreshResources();
+ $('referenceHint').textContent='Образец удалён.';
+ say('Образец удалён из студии');
+});
+$('resetRenderSettings').onclick=()=>{
+ if(!confirm('Сбросить только параметры генерации? Черновики и изображения останутся.'))return;
+ const defaults={variants:'1',resolution:'768x960',seed:'0',steps:'28',cfg:'6.5',
+  strength:'0.55',renderMode:'txt2img',reference:'',lora:''};
+ for(const [id,value] of Object.entries(defaults)){$(id).value=value;rememberSetting(id)}
+ $('referenceFile').value='';
+ $('referenceHint').textContent='Сброшено: по описанию, без референса и LoRA.';
+ say('Параметры сброшены без удаления изображений и черновиков');
+};
 
 function switchMode(next){
  currentMode=next==='quick'?'quick':'graph';
@@ -922,6 +952,10 @@ async function refreshJobHistory(restore){
 $('generate').onclick=()=>task(async()=>{
  $('generate').disabled=true;
  try{
+  if($('referenceFile').files.length)
+   throw Error('Выбранный файл ещё НЕ добавлен. Нажми «Добавить образец».');
+  if($('renderMode').value==='img2img'&&!$('reference').value)
+   throw Error('Режим «По образцу» требует загруженного референса.');
   const [width,height]=$('resolution').value.split('x').map(Number);
   const variantText=$('variants').value.trim()||'авто';
   if(!/^(?:авто|auto|[1-9][0-9]?)$/i.test(variantText) ||

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import requests
 from flask import jsonify, request
+from studio.result_deletion import delete_single_result
 
 _TRANSLATING = set()
 _TRANSLATE_LOCK = threading.Lock()
@@ -211,6 +212,14 @@ def register(app, connection, data_source, ollama_url, ollama_model, current_job
         with _TRANSLATE_LOCK:
             item["translating"]=draft_id in _TRANSLATING
         return jsonify(item)
+
+    @app.delete("/api/quick/results/<int:result_id>")
+    def catalog_delete_result(result_id):
+        """Remove just one persisted PNG variant and its SQLite result record."""
+        if result_id < 1:
+            return jsonify(error="Invalid result ID"),400
+        payload, status = delete_single_result(result_id,connection,data_root(),get_job)
+        return jsonify(payload),status
 
     @app.get("/api/quick/results")
     def catalog_results():

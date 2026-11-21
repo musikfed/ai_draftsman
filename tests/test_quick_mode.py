@@ -278,6 +278,150 @@ class QuickModeTests(unittest.TestCase):
                              .get_json()["total"],1)
         self.assertEqual(len(list((job/"images").glob("*.png"))),1)
 
+    def _create_deletable_result(self, count=2, archived=False):
+        """Build two genuine PNG variants in the isolated test folder."""
+        from PIL import Image
+        draft=self.client.put("/api/quick/draft/saved",json={
+            "prompt":"A ginger kitten in glasses",
+            "negative_prompt":"blurry"}).get_json()["draft_id"]
+        jid="d"*32
+        folder=Path(self.temp.name)/"jobs"/jid
+        (folder/"images").mkdir(parents=True)
+        outputs=[]
+        for variant in range(1,count+1):
+            name=f"000_00_v{variant:02d}"
+            img=folder/"images"/(name+".png")
+            master=folder/"images"/(name+"_master.png")
+            Image.new("RGB",(30,35),"orange").save(img)
+            Image.new("RGB",(30,35),"orange").save(master)
+            outputs.append({"variant":variant,"seed":variant+800,
+                            "png8":str(img),"master":str(master)})
+        (folder/"state.json").write_text(json.dumps({
+            "status":"completed","created_at":100,
+            "finished_at":200,"completed":count,"total":count,
+            "outputs":outputs
+        }),encoding="utf-8")
+        (folder/"spec.json").write_text(json.dumps({
+            "prompt":"A ginger kitten in glasses",
+            "negative_prompt":"blurry","source":"quick"
+        }),encoding="utf-8")
+        with sqlite3.connect(self.db_path) as db:
+            draft_catalog.link_job(db,draft,jid)
+            db.execute("UPDATE quick_draft_history SET archived=? WHERE id=?",
+                       (int(archived),draft))
+        return draft,jid,folder
+
+    def test_delete_one_variant_removes_png_master_db_and_keeps_other_variant(self):
+        draft,jid,folder=self._create_deletable_result()
+        with patch.object(jobs,"JOBS",Path(self.temp.name)/"jobs"),patch.object(
+            studio_app,"DATA",Path(self.temp.name)):
+            gallery=self.client.get("/api/quick/results").get_json()
+            self.assertEqual(gallery["total"],2)
+            first=next(r for r in gallery["results"] if r["variant"]==1)
+            second=next(r for r in gallery["results"] if r["variant"]==2)
+            self.assertEqual(self.client.patch(
+                "/api/quick/images/"+jid+"/1/rating",
+                json={"rating":5}).status_code,200)
+            result=self.client.delete("/api/quick/results/"+str(first["index"]))
+            self.assertEqual(result.status_code,200,result.get_json())
+            self.assertTrue(result.get_json()["deleted"])
+            self.assertEqual(result.get_json()["files_removed"],2)
+            self.assertEqual(result.get_json()["remaining_variants"],1)
+            self.assertEqual(self.client.delete(
+                "/api/quick/results/"+str(first["index"])).status_code,404)
+            self.assertEqual(self.client.get(
+                "/api/jobs/"+jid+"/images/1").status_code,404)
+            self.assertEqual(self.client.get(
+                "/api/jobs/"+jid+"/images/2").status_code,200)
+            final=self.client.get("/api/quick/results").get_json()
+            self.assertEqual(final["total"],1)
+            self.assertEqual(final["results"][0]["index"],second["index"])
+            self.assertEqual(self.client.get("/api/quick/catalog/"+str(draft))
+                             .get_json()["jobs"][0]["images"][0]["variant"],2)
+        self.assertFalse((folder/"images"/"000_00_v01.png").exists())
+        self.assertFalse((folder/"images"/"000_00_v01_master.png").exists())
+        self.assertTrue((folder/"images"/"000_00_v02.png").exists())
+        self.assertTrue((folder/"images"/"000_00_v02_master.png").exists())
+        self.assertEqual(len(json.loads((folder/"state.json").read_text())["outputs"]),1)
+        self.assertTrue((folder/"spec.json").exists())
+        with sqlite3.connect(self.db_path) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM quick_result_index").fetchone()[0],1)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM quick_image_ratings").fetchone()[0],0)
+            self.assertIsNotNone(db.execute(
+                "SELECT id FROM quick_draft_history WHERE id=?",(draft,)).fetchone())
+
+    def test_delete_last_image_unlinks_job_but_keeps_draft_and_spec(self):
+        draft,jid,folder=self._create_deletable_result(count=1)
+        with patch.object(jobs,"JOBS",Path(self.temp.name)/"jobs"),patch.object(
+            studio_app,"DATA",Path(self.temp.name)):
+            result=self.client.get("/api/quick/results").get_json()["results"][0]
+            deleted=self.client.delete("/api/quick/results/"+str(result["index"]))
+            self.assertEqual(deleted.status_code,200)
+            self.assertEqual(deleted.get_json()["remaining_variants"],0)
+            self.assertEqual(self.client.get("/api/quick/results").get_json()["total"],0)
+            draft_data=self.client.get("/api/quick/catalog/"+str(draft)).get_json()
+            self.assertEqual(draft_data["jobs"],[])
+        with sqlite3.connect(self.db_path) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM quick_draft_jobs").fetchone()[0],0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM quick_result_index").fetchone()[0],0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM quick_draft_history WHERE id=?",
+                            (draft,)).fetchone()[0],1)
+        self.assertTrue((folder/"spec.json").exists())
+        self.assertTrue((folder/"state.json").exists())
+        self.assertEqual(len(list((folder/"images").glob("*.png"))),0)
+
+    def test_delete_archived_result_requires_unarchive_and_does_not_remove_files(self):
+        draft,jid,folder=self._create_deletable_result(count=1,archived=True)
+        with patch.object(jobs,"JOBS",Path(self.temp.name)/"jobs"),patch.object(
+            studio_app,"DATA",Path(self.temp.name)):
+            item=self.client.get("/api/quick/results").get_json()["results"][0]
+            result=self.client.delete("/api/quick/results/"+str(item["index"]))
+            self.assertEqual(result.status_code,409)
+            self.assertEqual(self.client.get("/api/quick/results").get_json()["total"],1)
+        self.assertTrue((folder/"images"/"000_00_v01.png").exists())
+
+    def test_delete_rejects_running_job_and_path_escape(self):
+        draft,jid,folder=self._create_deletable_result(count=1)
+        with patch.object(jobs,"JOBS",Path(self.temp.name)/"jobs"),patch.object(
+            studio_app,"DATA",Path(self.temp.name)):
+            item=self.client.get("/api/quick/results").get_json()["results"][0]
+            state_path=folder/"state.json"
+            state=json.loads(state_path.read_text())
+            state["status"]="running"
+            state_path.write_text(json.dumps(state))
+            result=self.client.delete("/api/quick/results/"+str(item["index"]))
+            self.assertEqual(result.status_code,409)
+            state["status"]="completed"
+            state["outputs"][0]["png8"]=str(Path(self.temp.name)/"unsafe.png")
+            state_path.write_text(json.dumps(state))
+            result=self.client.delete("/api/quick/results/"+str(item["index"]))
+            self.assertEqual(result.status_code,409)
+        self.assertTrue((folder/"images"/"000_00_v01_master.png").exists())
+        with sqlite3.connect(self.db_path) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM quick_result_index").fetchone()[0],1)
+
+    def test_delete_rolls_back_image_and_manifest_when_sqlite_fails(self):
+        from studio import result_deletion
+        draft,jid,folder=self._create_deletable_result(count=1)
+        with patch.object(jobs,"JOBS",Path(self.temp.name)/"jobs"),patch.object(
+            studio_app,"DATA",Path(self.temp.name)):
+            item=self.client.get("/api/quick/results").get_json()["results"][0]
+            old_state=json.loads((folder/"state.json").read_text())
+            real_atomic=result_deletion.atomic_json
+            called=[0]
+            def fail_once(path,content):
+                called[0]+=1
+                if called[0]==1:
+                    raise OSError("Simulated file-system error")
+                return real_atomic(path,content)
+            with patch.object(result_deletion,"atomic_json",side_effect=fail_once):
+                deleted=self.client.delete("/api/quick/results/"+str(item["index"]))
+            self.assertEqual(deleted.status_code,500)
+            self.assertEqual(self.client.get("/api/quick/results").get_json()["total"],1)
+        self.assertTrue((folder/"images"/"000_00_v01.png").exists())
+        self.assertTrue((folder/"images"/"000_00_v01_master.png").exists())
+        self.assertEqual(json.loads((folder/"state.json").read_text()),old_state)
+
     def test_empty_prompt_never_starts_gpu(self):
         r=self.client.post("/api/quick/generate",json={"prompt":""})
         self.assertEqual(r.status_code,400)

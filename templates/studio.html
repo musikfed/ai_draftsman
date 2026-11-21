@@ -104,6 +104,9 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
 .result-card .result-sub{font-size:11px;color:var(--muted)}
 .result-card .result-actions{display:flex;gap:5px;flex-wrap:wrap}
 .result-card .result-actions button{font-size:11px}
+.result-card .result-actions .delete-result{background:#792b35;border:1px solid #be5a64;color:#fff0f1;font-weight:600}
+.result-card .result-actions .delete-result:hover:not(:disabled){background:#ab3543;border-color:#f07a87}
+.result-card .result-actions .delete-result:disabled{opacity:.38;cursor:not-allowed}
 .result-card.archived{opacity:.84}
 #quickSection textarea{min-height:115px}
 .wait-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:10px 0}
@@ -1227,6 +1230,12 @@ document.addEventListener('draftsman:open-result',event=>{
  currentJob=id;
  switchMode('quick');
  task(updateJob);
+});
+document.addEventListener('draftsman:result-deleted',event=>{
+ const id=event.detail?.job_id;
+ if(!/^[0-9a-f]{32}$/.test(id||''))return;
+ if(currentJob===id)task(updateJob);
+ if($('catalogPanel').open)document.dispatchEvent(new CustomEvent('draftsman:job-completed'));
 });
 document.addEventListener('draftsman:job-started',event=>{
  const id=event.detail?.job_id;

@@ -47,6 +47,17 @@ class QuickStudioLayoutTests(unittest.TestCase):
         self.assertIn("overflow-x:auto",self.html)
         self.assertNotIn("Все результаты</button>",self.html)
 
+    def test_delete_result_button_confirms_and_refreshes_both_galleries(self):
+        self.assertIn("button('Удалить',()=>deleteResult(item,remove))",self.results)
+        self.assertIn("await api('/api/quick/results/'+item.index,'DELETE')",self.results)
+        self.assertIn("if(!confirm('НАВСЕГДА удалить '",self.results)
+        self.assertIn("remove.disabled=Boolean(item.archived)",self.results)
+        self.assertIn("await loadResults(false)",self.results)
+        self.assertIn("await loadShelf()",self.results)
+        self.assertIn("draftsman:result-deleted",self.results)
+        self.assertIn("delete-result:hover",self.html)
+        self.assertIn("document.addEventListener('draftsman:result-deleted'",self.html)
+
     def test_no_extra_gpu_or_services_for_ui(self):
         for file in (self.translation,self.results):
             self.assertNotIn("ollama",file.lower())

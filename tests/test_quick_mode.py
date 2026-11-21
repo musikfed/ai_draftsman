@@ -81,6 +81,22 @@ class QuickModeTests(unittest.TestCase):
             r=self.client.post("/api/quick/drafts/"+str(entry["draft_id"])+"/translate")
         self.assertEqual(r.status_code,409)
 
+    def test_reference_preview_and_safe_deletion(self):
+        import os
+        from PIL import Image
+        path=Path(self.temp.name)/"references"
+        path.mkdir()
+        filename="a"*32+".png"
+        Image.new("RGB",(8,8),"red").save(path/filename)
+        with patch.object(studio_app,"DATA",Path(self.temp.name)):
+            self.assertEqual(self.client.get("/api/references/"+filename+"/preview").status_code,200)
+            self.assertEqual(self.client.delete("/api/references/../../etc/passwd").status_code,404)
+            with patch.object(studio_app,"current_job",return_value={"status":"running"}):
+                self.assertEqual(self.client.delete("/api/references/"+filename).status_code,409)
+            self.assertEqual(self.client.delete("/api/references/"+filename).status_code,200)
+            self.assertFalse((path/filename).exists())
+            self.assertEqual(self.client.delete("/api/references/"+filename).status_code,404)
+
     def test_empty_prompt_never_starts_gpu(self):
         r=self.client.post("/api/quick/generate",json={"prompt":""})
         self.assertEqual(r.status_code,400)

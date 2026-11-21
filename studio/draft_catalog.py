@@ -23,6 +23,8 @@ def migrate(db, data: Path):
         "title": "TEXT NOT NULL DEFAULT ''",
         "rating": "INTEGER NOT NULL DEFAULT 0",
         "note": "TEXT NOT NULL DEFAULT ''",
+        "archived": "INTEGER NOT NULL DEFAULT 0",
+        "parent_draft_id": "INTEGER",
     }
     for name, declaration in additions.items():
         if name not in existing:
@@ -105,9 +107,15 @@ def register(app, connection, data_source, ollama_url, ollama_model, current_job
     def lookup(draft_id):
         with connection() as db:
             row=db.execute("""SELECT id,title,prompt,negative_prompt,prompt_ru,
-                negative_prompt_ru,created_at,rating,note FROM quick_draft_history
+                negative_prompt_ru,created_at,rating,note,archived,parent_draft_id FROM quick_draft_history
                 WHERE id=?""",(draft_id,)).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        item=dict(row)
+        if not item["title"].strip():
+            source=(item.get("prompt_ru") or item.get("prompt") or "Без описания").strip()
+            item["title"]=f"Эскиз #{draft_id:05d} · "+source[:56]
+        return item
 
     @app.get("/api/quick/catalog")
     def catalog_search():
@@ -117,7 +125,12 @@ def register(app, connection, data_source, ollama_url, ollama_model, current_job
         page=_safe_param_int(request.args.get("page"),1,1,999999)
         page_size=_safe_param_int(request.args.get("size"),8,1,30)
         has_images=request.args.get("images")=="1"
+        archive_filter=request.args.get("archive","active")
         where=["d.rating>=?"]
+        if archive_filter=="active":
+            where.append("d.archived=0")
+        elif archive_filter=="archived":
+            where.append("d.archived=1")
         args=[min_rating]
         if query:
             where.append("""(d.title LIKE ? OR d.prompt LIKE ? OR
@@ -131,7 +144,7 @@ def register(app, connection, data_source, ollama_url, ollama_model, current_job
                   "rating":"d.rating DESC,d.id DESC"}.get(order,"d.id DESC")
         with connection() as db:
             total=db.execute(f"SELECT COUNT(*) FROM quick_draft_history d WHERE {clause}",args).fetchone()[0]
-            rows=db.execute(f"""SELECT d.id,d.title,d.created_at,d.rating,
+            rows=db.execute(f"""SELECT d.id,d.title,d.created_at,d.rating,d.archived,d.parent_draft_id,
                 substr(d.prompt,1,155) AS preview,
                 substr(d.prompt_ru,1,155) AS preview_ru,
                 (d.prompt_ru IS NOT NULL AND d.negative_prompt_ru IS NOT NULL) AS translated,
@@ -139,7 +152,12 @@ def register(app, connection, data_source, ollama_url, ollama_model, current_job
                 FROM quick_draft_history d WHERE {clause}
                 ORDER BY {order_by} LIMIT ? OFFSET ?""",
                 [*args,page_size,(page-1)*page_size]).fetchall()
-        return jsonify(drafts=[dict(row) for row in rows],total=total,page=page,
+        items=[dict(row) for row in rows]
+        for item in items:
+            if not item["title"].strip():
+                source=(item.get("preview_ru") or item.get("preview") or "Без описания").strip()
+                item["title"]=f"Эскиз #{item['id']:05d} · "+source[:56]
+        return jsonify(drafts=items,total=total,page=page,
                        size=page_size,pages=max(1,(total+page_size-1)//page_size))
 
     @app.get("/api/quick/catalog/<int:draft_id>")
@@ -184,6 +202,21 @@ def register(app, connection, data_source, ollama_url, ollama_model, current_job
             item["translating"]=draft_id in _TRANSLATING
         return jsonify(item)
 
+    @app.post("/api/quick/catalog/<int:draft_id>/archive")
+    def catalog_archive(draft_id):
+        payload=request.get_json(silent=True) or {}
+        if type(payload.get("archived")) is not bool:
+            return jsonify(error="archived must be true or false"),400
+        archived=1 if payload["archived"] else 0
+        with connection() as db:
+            item=db.execute("SELECT 1 FROM quick_draft_history WHERE id=?",
+                            (draft_id,)).fetchone()
+            if not item:
+                return jsonify(error="Draft not found"),404
+            db.execute("UPDATE quick_draft_history SET archived=? WHERE id=?",
+                       (archived,draft_id))
+        return jsonify(saved=True,id=draft_id,archived=bool(archived))
+
     @app.patch("/api/quick/catalog/<int:draft_id>")
     def catalog_edit(draft_id):
         payload=request.get_json(silent=True) or {}
@@ -204,9 +237,12 @@ def register(app, connection, data_source, ollama_url, ollama_model, current_job
         if not changes:
             return jsonify(error="Nothing to update"),400
         with connection() as db:
-            if not db.execute("SELECT 1 FROM quick_draft_history WHERE id=?",
-                              (draft_id,)).fetchone():
+            row=db.execute("SELECT archived FROM quick_draft_history WHERE id=?",
+                           (draft_id,)).fetchone()
+            if row is None:
                 return jsonify(error="Draft not found"),404
+            if row["archived"]:
+                return jsonify(error="Archived draft is read-only; unlock it explicitly before editing"),409
             db.execute("UPDATE quick_draft_history SET "+
                        ", ".join(f"{k}=?" for k in changes)+" WHERE id=?",
                        [*changes.values(),draft_id])
@@ -228,9 +264,13 @@ def register(app, connection, data_source, ollama_url, ollama_model, current_job
         if not any(output.get("variant")==variant for output in state.get("outputs",[])):
             return jsonify(error="Image not found"),404
         with connection() as db:
-            if not db.execute("SELECT 1 FROM quick_draft_jobs WHERE job_id=?",
-                              (job_id,)).fetchone():
+            row=db.execute("""SELECT d.archived FROM quick_draft_jobs j
+                JOIN quick_draft_history d ON d.id=j.draft_id
+                WHERE j.job_id=?""",(job_id,)).fetchone()
+            if row is None:
                 return jsonify(error="Image is not linked to a draft"),404
+            if row["archived"]:
+                return jsonify(error="Archived result is read-only"),409
             db.execute("""INSERT INTO quick_image_ratings(job_id,variant,rating,note)
                 VALUES(?,?,?,?) ON CONFLICT(job_id,variant)
                 DO UPDATE SET rating=excluded.rating,note=excluded.note""",

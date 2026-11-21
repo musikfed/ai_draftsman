@@ -1069,40 +1069,44 @@ function renderWaiting(total,completed=0){
   grid.replaceChildren();
   for(let i=0;i<visible;i++){
    const card=document.createElement('div');card.className='wait-slot';
-   const turtle=document.createElement('img');turtle.className='wait-turtle';
-   turtle.src='/static/images/sea-turtle-cartoon.svg';turtle.alt='';
-   turtle.width=230;turtle.height=160;turtle.decoding='async';
-   turtle.setAttribute('aria-hidden','true');card.append(turtle);
-   const caption=document.createElement('span');caption.className='wait-caption';card.append(caption);
-   for(let j=0;j<6;j++){
+   const bubbleCount=visible===1?26:16;
+   const hues=[175,191,207,235,264,304,46,153];
+   for(let j=0;j<bubbleCount;j++){
     const bubble=document.createElement('i');bubble.className='wait-bubble';
-    bubble.style.setProperty('--bubble-x',((j*19+i*11)%88+5)+'%');
-    bubble.style.setProperty('--bubble-size',(6+(j*5)%13)+'px');
-    bubble.style.setProperty('--bubble-speed',(2.6+(j%3)*.65)+'s');
-    bubble.style.setProperty('--bubble-delay',(-j*.58-i*.19)+'s');
+    const random=Math.random;
+    const speed=3.3+random()*6;
+    const hue=hues[Math.floor(random()*hues.length)]+Math.round(random()*12-6);
+    bubble.style.setProperty('--bubble-x',(2+random()*94).toFixed(1)+'%');
+    bubble.style.setProperty('--bubble-size',(4+random()*29).toFixed(1)+'px');
+    bubble.style.setProperty('--bubble-hue',String(hue));
+    bubble.style.setProperty('--bubble-drift',(random()*86-43).toFixed(1)+'px');
+    bubble.style.setProperty('--bubble-speed',speed.toFixed(2)+'s');
+    bubble.style.setProperty('--bubble-delay',(-random()*speed).toFixed(2)+'s');
     bubble.setAttribute('aria-hidden','true');card.append(bubble);
    }
-   grid.append(card);
+   const caption=document.createElement('span');caption.className='wait-caption';
+   card.append(caption);grid.append(card);
   }
  }
  [...grid.querySelectorAll('.wait-caption')].forEach((el,i)=>{
-  el.textContent='Вариант '+(start+i+1)+' / '+amount+(start+i<completed?' · готов':' · черепашка плывёт');
+  el.textContent='Вариант '+(start+i+1)+' / '+amount+
+   (start+i<completed?' · готов':' · пузырьки поднимаются');
  });
  let overflow=grid.querySelector('.wait-overflow');
  if(amount>visible){
   if(!overflow){overflow=document.createElement('div');overflow.className='wait-overflow';grid.append(overflow)}
-  overflow.textContent='Готово '+completed+' из '+amount+' · черепашки сопровождают последовательную генерацию';
+  overflow.textContent='Готово '+completed+' из '+amount+' · ожидание генерации';
  }else if(overflow){overflow.remove()}
 }
 $('demoWait').onclick=()=>{
- if(activeRendering){say('Сейчас идёт настоящий рендер — черепашка уже плывёт');return}
+ if(activeRendering){say('Сейчас идёт настоящий рендер — пузырьки уже поднимаются');return}
  demoWaiting=!demoWaiting;
  $('demoWait').textContent=demoWaiting?'Скрыть демо':'🌊 Демо ожидания';
  $('jobProgress').classList.toggle('collapsed',!demoWaiting);
  if(demoWaiting){
   let amount=Number($('variants').value);
   if(!Number.isInteger(amount)||amount<1||amount>48)amount=1;
-  $('jobStage').textContent='🌊 Демо: черепаха плавает, но GPU не запущен';
+  $('jobStage').textContent='🫧 Демо: цветные пузырьки, GPU не запущен';
   $('jobBar').value=0;renderWaiting(amount);
  }
 };
@@ -1205,7 +1209,7 @@ $('generate').onclick=()=>task(async()=>{
   $('jobInfo').textContent='Задание '+currentJob+' принято';
   $('jobProgress').classList.remove('collapsed');
   $('jobBar').value=0;
-  $('jobStage').textContent='🌊 Черепашка уже в воде — модель готовится к рисованию';
+  $('jobStage').textContent='🫧 Подводные пузырьки — модель готовится к рисованию';
   renderWaiting(/^\d+$/.test(settings.variants)?Number(settings.variants):1);
   await refreshJobHistory(false);
   await updateJob();

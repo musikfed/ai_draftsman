@@ -265,7 +265,8 @@ class QuickModeTests(unittest.TestCase):
             "negative_prompt":"","source":"quick"}),encoding="utf-8")
         with sqlite3.connect(self.db_path) as db:
             draft_catalog.link_job(db,idx,jid)
-        with patch.object(jobs,"JOBS",Path(self.temp.name)/"jobs"):
+        with patch.object(jobs,"JOBS",Path(self.temp.name)/"jobs"), patch.object(
+             studio_app,"DATA",Path(self.temp.name)):
             once=self.client.get("/api/quick/results").get_json()
             again=self.client.get("/api/quick/results").get_json()
             self.assertEqual(once["total"],1)

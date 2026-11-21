@@ -910,8 +910,8 @@ async function refreshPromptExamples(){
     try{localStorage.setItem('draftsman_checkpoint',example.checkpoint)}catch(e){}
    }
    const ref=$('reference'),lora=$('lora');
-   const refValid=example.mode==='img2img'&&Array.from(ref.options).some(o=>o.value===example.reference);
-   const loraValid=Array.from(lora.options).some(o=>o.value===example.lora);
+   const refValid=example.mode==='img2img'&&Boolean(example.reference)&&Array.from(ref.options).some(o=>o.value===example.reference);
+   const loraValid=!example.lora||Array.from(lora.options).some(o=>o.value===example.lora);
    ref.value=refValid?example.reference:'';rememberSetting('reference');
    lora.value=loraValid?example.lora:'';rememberSetting('lora');
    $('renderMode').value=refValid?'img2img':'txt2img';rememberSetting('renderMode');

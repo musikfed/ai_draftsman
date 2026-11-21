@@ -200,6 +200,83 @@ class QuickModeTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/quick/catalog/"+str(row["draft_id"])).get_json()
                          ["prompt_ru"],"Рыжий котёнок в красных очках")
 
+    def test_archive_is_read_only_until_explicit_unlock(self):
+        item=self.client.put("/api/quick/draft/saved",
+            json={"prompt":"Cartoon turtle in water","negative_prompt":"blur"}).get_json()
+        idx=item["draft_id"]
+        locked=self.client.post("/api/quick/catalog/"+str(idx)+"/archive",
+            json={"archived":True})
+        self.assertEqual(locked.status_code,200)
+        self.assertTrue(locked.get_json()["archived"])
+        denied=self.client.patch("/api/quick/catalog/"+str(idx),
+            json={"title":"Changed while archived","rating":5})
+        self.assertEqual(denied.status_code,409)
+        hidden=self.client.get("/api/quick/catalog").get_json()
+        self.assertEqual(hidden["total"],0)
+        search=self.client.get("/api/quick/catalog?archive=all&q=%23"+str(idx)).get_json()
+        self.assertEqual(search["total"],1)
+        self.assertEqual(search["drafts"][0]["archived"],1)
+        self.assertEqual(self.client.post("/api/quick/catalog/"+str(idx)+"/archive",
+            json={"archived":"yes"}).status_code,400)
+        unlocked=self.client.post("/api/quick/catalog/"+str(idx)+"/archive",
+            json={"archived":False})
+        self.assertEqual(unlocked.status_code,200)
+        self.assertEqual(self.client.patch("/api/quick/catalog/"+str(idx),
+            json={"title":"Editable again"}).status_code,200)
+
+    def test_regenerate_archived_forks_new_draft_and_preserves_original(self):
+        from unittest.mock import patch
+        item=self.client.put("/api/quick/draft/saved",
+            json={"prompt":"A vivid sea turtle","negative_prompt":"extra legs"}).get_json()
+        idx=item["draft_id"]
+        self.client.post("/api/quick/catalog/"+str(idx)+"/archive",
+            json={"archived":True})
+        jid="e"*32
+        with patch.object(studio_app,"submit_job",return_value=jid):
+            response=self.client.post("/api/quick/catalog/"+str(idx)+"/regenerate",
+                json={"seed_mode":"random"})
+        self.assertEqual(response.status_code,202,response.get_json())
+        result=response.get_json()
+        self.assertNotEqual(result["draft_id"],idx)
+        with sqlite3.connect(self.db_path) as db:
+            source=db.execute("SELECT archived,prompt FROM quick_draft_history WHERE id=?",
+                (idx,)).fetchone()
+            child=db.execute("SELECT archived,parent_draft_id,prompt FROM quick_draft_history WHERE id=?",
+                (result["draft_id"],)).fetchone()
+            link=db.execute("SELECT draft_id FROM quick_draft_jobs WHERE job_id=?",
+                (jid,)).fetchone()
+        self.assertEqual(source,(1,"A vivid sea turtle"))
+        self.assertEqual(child,(0,idx,"A vivid sea turtle"))
+        self.assertEqual(link[0],result["draft_id"])
+
+    def test_result_index_stable_across_refresh_without_file_copies(self):
+        from PIL import Image
+        item=self.client.put("/api/quick/draft/saved",
+            json={"prompt":"Turtle in orange shell","negative_prompt":""}).get_json()
+        idx=item["draft_id"];jid="f"*32
+        job=Path(self.temp.name)/"jobs"/jid
+        (job/"images").mkdir(parents=True)
+        image=job/"images"/"000_00_v01.png"
+        Image.new("RGB",(16,20),"green").save(image)
+        (job/"state.json").write_text(json.dumps({"status":"completed",
+            "created_at":100,"finished_at":150,
+            "outputs":[{"variant":1,"seed":9,"png8":str(image)}]}),encoding="utf-8")
+        (job/"spec.json").write_text(json.dumps({"prompt":"Turtle in orange shell",
+            "negative_prompt":"","source":"quick"}),encoding="utf-8")
+        with sqlite3.connect(self.db_path) as db:
+            draft_catalog.link_job(db,idx,jid)
+        with patch.object(jobs,"JOBS",Path(self.temp.name)/"jobs"):
+            once=self.client.get("/api/quick/results").get_json()
+            again=self.client.get("/api/quick/results").get_json()
+            self.assertEqual(once["total"],1)
+            self.assertEqual(once["results"][0]["index"],again["results"][0]["index"])
+            self.assertTrue(once["results"][0]["image_url"].endswith("/images/1"))
+            self.client.post("/api/quick/catalog/"+str(idx)+"/archive",
+                json={"archived":True})
+            self.assertEqual(self.client.get("/api/quick/results?archive=archived")
+                             .get_json()["total"],1)
+        self.assertEqual(len(list((job/"images").glob("*.png"))),1)
+
     def test_empty_prompt_never_starts_gpu(self):
         r=self.client.post("/api/quick/generate",json={"prompt":""})
         self.assertEqual(r.status_code,400)

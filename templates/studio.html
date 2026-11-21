@@ -77,10 +77,23 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
 .cols.results #projectColumn>.panel:not(#resultsSection){display:none}
 #quickSection.collapsed,#resultsSection.collapsed{display:none!important}
 .quick-shelf{border:1px solid var(--line);border-radius:8px;margin:8px 0 15px;padding:9px;background:#0f2035}
-.quick-shelf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-top:8px}
-.quick-shelf-grid a{display:block;min-width:0}
-.quick-shelf-grid img{width:100%;height:100px;object-fit:contain;background:#08162a;border-radius:5px}
+.quick-shelf-header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.quick-shelf-heading{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.quick-shelf-nav{display:flex;align-items:center;gap:7px;min-width:0}
+.quick-shelf-nav>button{flex:0 0 auto;padding:4px 10px;font-size:18px}
+.quick-shelf-nav>button:disabled{opacity:.3;cursor:default}
+.quick-shelf-grid{display:flex;flex:1 1 auto;min-width:0;overflow-x:auto;gap:8px;scrollbar-width:thin;scroll-snap-type:x proximity;padding:2px 2px 6px}
+.quick-shelf-grid .quick-shelf-item{flex:0 0 clamp(85px,calc((100% - 56px)/8),128px);min-width:0;scroll-snap-align:start;display:flex;flex-direction:column;gap:3px;border:2px solid transparent;border-radius:7px;background:#0a192e;padding:3px;text-align:left}
+.quick-shelf-grid .quick-shelf-item:hover,.quick-shelf-grid .quick-shelf-item.selected{border-color:var(--orange)}
+.quick-shelf-grid .quick-shelf-item:focus-visible{outline:2px solid #ffe0a6;outline-offset:1px}
+.quick-shelf-grid img{width:100%;height:98px;object-fit:contain;background:#08162a;border-radius:4px}
 .quick-shelf-grid .shelf-title{font-size:10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.quick-shelf-status{font-size:11px;color:var(--muted);margin-top:4px}
+.quick-prompts-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:8px 0 12px}
+.quick-prompts-pair>div{min-width:0}
+.quick-prompts-pair textarea{width:100%;min-height:115px}
+.quick-prompts-pair textarea[readonly]{background:#09192c;color:#bfd9f2;cursor:default;resize:vertical}
+@media(max-width:680px){.quick-prompts-pair{grid-template-columns:1fr}}
 .results-controls{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
 .results-controls input{flex:2 1 240px}
 .results-controls select{flex:1 1 120px}
@@ -109,35 +122,23 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
  background:radial-gradient(ellipse at 20% 20%,#a0f3e431,transparent 50%),
  radial-gradient(ellipse at 70% 50%,#49c7d526,transparent 65%);
  animation:underwater-current 11s ease-in-out infinite alternate;pointer-events:none}
-.wait-turtle{display:block;width:clamp(170px,85%,250px);height:160px;max-width:94%;
- object-fit:contain;position:relative;z-index:2;pointer-events:none;
- filter:drop-shadow(0 8px 9px #0013278c);transform-origin:50% 56%;
- animation:sea-turtle-swim 9s ease-in-out infinite}
-.wait-grid.single .wait-turtle{height:194px;width:min(290px,86%)}
-.wait-slot:nth-child(2) .wait-turtle{animation-delay:-3.4s;animation-direction:alternate-reverse}
-.wait-slot:nth-child(3) .wait-turtle{animation-delay:-6.8s}
-.wait-bubble{position:absolute;bottom:-20px;width:var(--bubble-size,12px);height:var(--bubble-size,12px);
- left:var(--bubble-x,30%);border:1px solid #c6f1ffba;border-radius:50%;
- background:radial-gradient(circle at 32% 26%,#fbffffc9 0%,#94d7f35e 23%,#2b91bd15 77%);
- box-shadow:inset -1px -2px 4px #08374a55,0 0 7px #95e4ff54;
- animation:bubble-float var(--bubble-speed,4.5s) ease-in infinite;
- animation-delay:var(--bubble-delay,0s);opacity:0;pointer-events:none;z-index:1}
+.wait-bubble{position:absolute;bottom:-38px;width:var(--bubble-size,12px);height:var(--bubble-size,12px);
+ left:var(--bubble-x,30%);border:1px solid hsl(var(--bubble-hue,190) 90% 80% / .65);border-radius:50%;
+ background:radial-gradient(circle at 30% 24%,#fff9 0%,hsl(var(--bubble-hue,190) 90% 78% / .27) 31%,hsl(var(--bubble-hue,190) 90% 67% / .09) 68%,transparent 85%);
+ box-shadow:inset -2px -3px 5px hsl(var(--bubble-hue,190) 75% 30% / .22),0 0 8px hsl(var(--bubble-hue,190) 90% 75% / .20);
+ animation:bubble-float var(--bubble-speed,5s) linear infinite;
+ animation-delay:var(--bubble-delay,0s);opacity:0;pointer-events:none;z-index:1;will-change:transform}
 .wait-caption{position:relative;z-index:3;text-align:center;font-size:11px;color:#e1f5ff;
  text-shadow:0 1px 4px #061627;background:#082844b5;padding:2px 7px;
  border:1px solid #ffffff17;border-radius:16px;max-width:95%}
 .wait-overflow{grid-column:1/-1;text-align:center;font-size:12px;color:var(--muted)}
-@keyframes sea-turtle-swim{0%{transform:translate3d(-23px,8px,0) rotate(-7deg) scale(.94)}
- 23%{transform:translate3d(-8px,-6px,0) rotate(-2deg) scale(.98)}
- 50%{transform:translate3d(19px,-13px,0) rotate(5deg) scale(1.02)}
- 77%{transform:translate3d(9px,2px,0) rotate(0deg) scale(.98)}
- 100%{transform:translate3d(-23px,8px,0) rotate(-7deg) scale(.94)}}
-@keyframes bubble-float{0%{transform:translate3d(0,0,0) scale(.55);opacity:0}
- 20%{opacity:.92}80%{opacity:.65}100%{transform:translate3d(18px,-220px,0) scale(1.18);opacity:0}}
+@keyframes bubble-float{0%{transform:translate3d(0,0,0) scale(.75);opacity:0}
+ 14%{opacity:.8}78%{opacity:.58}100%{transform:translate3d(var(--bubble-drift,18px),-260px,0) scale(1.15);opacity:0}}
 @keyframes underwater-rays{from{transform:translateX(-4%) skewX(-12deg);opacity:.42}to{transform:translateX(8%) skewX(-12deg);opacity:.78}}
 @keyframes underwater-current{from{transform:translateX(-8%)}to{transform:translateX(12%)}}
 #jobProgress{margin:8px 0}#jobProgress progress{width:100%;height:12px;accent-color:var(--orange)}
 #jobHistory{max-width:100%;min-width:0}
-@media(prefers-reduced-motion:reduce){.wait-slot::before,.wait-slot::after,.wait-turtle,.wait-bubble{animation:none!important}.wait-bubble{opacity:.25}}
+@media(prefers-reduced-motion:reduce){.wait-slot::before,.wait-slot::after,.wait-bubble{animation:none!important;opacity:.32}}
 
 @media(max-width:970px){.cols{grid-template-columns:1fr}#canvasViewport{height:440px}}
 @media(max-width:600px){header{padding:9px}main{padding:8px}.panel{padding:10px}.grid3,.grid2{grid-template-columns:1fr 1fr}#systemMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -174,13 +175,29 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
    <h2>Быстрая генерация без проекта</h2>
    <p class="muted">Описывай любую картинку. Граф, узлы и утверждение не нужны. По образцу — выбери img2img справа.</p>
    <div class="quick-shelf">
-    <div class="toolbar"><strong>Последние эскизы</strong><span class="muted">Оригинальные PNG, без копий на диске</span><button id="openResults">Все результаты</button></div>
-    <div id="quickShelfGrid" class="quick-shelf-grid"></div>
+    <div class="quick-shelf-header">
+     <div class="quick-shelf-heading"><strong>Последние эскизы</strong><span class="muted">8 на странице · оригинальные PNG</span></div>
+     <button id="openResults" title="Поиск по всей истории рисунков">⌕ Поиск</button>
+    </div>
+    <div class="quick-shelf-nav">
+     <button id="quickShelfPrev" aria-label="Предыдущие восемь эскизов">‹</button>
+     <div id="quickShelfGrid" class="quick-shelf-grid" aria-label="Эскизы с выбором рисунка"></div>
+     <button id="quickShelfNext" aria-label="Следующие восемь эскизов">›</button>
+    </div>
+    <div id="quickShelfStatus" class="quick-shelf-status" aria-live="polite">Загрузка эскизов…</div>
    </div>
-   <label for="quickPrompt">Что нарисовать — положительный промпт</label>
-   <textarea id="quickPrompt" placeholder="Например: пушистый рыжий котёнок на зимнем подоконнике, мягкий свет, выразительная иллюстрация"></textarea>
-   <label for="quickNegative">Чего не должно быть — негативный промпт</label>
-   <textarea id="quickNegative" rows="3" placeholder="Размытость, лишние лапы, водяные знаки..."></textarea>
+   <div class="quick-prompts-pair">
+    <div><label for="quickPrompt">Положительный промпт · оригинал</label>
+     <textarea id="quickPrompt" placeholder="Например: пушистый рыжий котёнок на зимнем подоконнике, мягкий свет, выразительная иллюстрация"></textarea></div>
+    <div><label for="quickPromptRu">Положительный промпт · русский перевод</label>
+     <textarea id="quickPromptRu" readonly placeholder="Перевод появится после сохранения черновика" aria-label="Сохранённый русский перевод положительного промпта"></textarea></div>
+   </div>
+   <div class="quick-prompts-pair">
+    <div><label for="quickNegative">Негативный промпт · оригинал</label>
+     <textarea id="quickNegative" rows="3" placeholder="Размытость, лишние лапы, водяные знаки..."></textarea></div>
+    <div><label for="quickNegativeRu">Негативный промпт · русский перевод</label>
+     <textarea id="quickNegativeRu" rows="3" readonly placeholder="Перевод негативного промпта" aria-label="Сохранённый русский перевод негативного промпта"></textarea></div>
+   </div>
    <div class="toolbar"><select id="quickLLM" aria-label="Языковая модель для промпта"><option value="qwen3:8b">qwen3:8b</option></select>
     <button id="quickDraftAI">ИИ: улучшить промпт</button>
     <button id="saveQuick" class="primary">Сохранить черновик</button>
@@ -1253,4 +1270,4 @@ restorePageSettings();
 translate();
 startup().catch(e=>say(e.message));
 
-</script><script src="/static/js/draft_catalog.js"></script><script src="/static/js/results_catalog.js"></script></body></html>
+</script><script src="/static/js/draft_catalog.js"></script><script src="/static/js/results_catalog.js"></script><script src="/static/js/quick_translations.js"></script></body></html>

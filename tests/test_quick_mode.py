@@ -21,6 +21,13 @@ class QuickModeTests(unittest.TestCase):
                 prompt TEXT NOT NULL DEFAULT '',
                 negative_prompt TEXT NOT NULL DEFAULT '',
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+            db.execute("""CREATE TABLE quick_draft_history(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                prompt TEXT NOT NULL,
+                negative_prompt TEXT NOT NULL,
+                prompt_ru TEXT,
+                negative_prompt_ru TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
         def connect():
             db=sqlite3.connect(self.db_path)
             db.row_factory=sqlite3.Row
@@ -39,6 +46,40 @@ class QuickModeTests(unittest.TestCase):
         after=self.client.get("/api/quick/draft/saved").get_json()
         self.assertEqual(after["prompt"],"Snowy kitten")
         self.assertEqual(after["negative_prompt"],"blur")
+
+    def test_draft_history_keeps_old_version_without_duplicate_saves(self):
+        a=self.client.put("/api/quick/draft/saved",
+            json={"prompt":"Kitten in red glasses","negative_prompt":"blurry"}).get_json()
+        b=self.client.put("/api/quick/draft/saved",
+            json={"prompt":"Green parrot","negative_prompt":"watermark"}).get_json()
+        c=self.client.put("/api/quick/draft/saved",
+            json={"prompt":"Green parrot","negative_prompt":"watermark"}).get_json()
+        self.assertNotEqual(a["draft_id"],b["draft_id"])
+        self.assertEqual(b["draft_id"],c["draft_id"])
+        entries=self.client.get("/api/quick/drafts").get_json()["drafts"]
+        self.assertEqual(len(entries),2)
+        saved=self.client.get("/api/quick/drafts/"+str(a["draft_id"])).get_json()
+        self.assertEqual(saved["prompt"],"Kitten in red glasses")
+        self.assertEqual(saved["negative_prompt"],"blurry")
+
+    def test_cached_local_translation(self):
+        entry=self.client.put("/api/quick/draft/saved",
+            json={"prompt":"Kitten","negative_prompt":"blur"}).get_json()
+        with sqlite3.connect(self.db_path) as db:
+            db.execute("UPDATE quick_draft_history SET prompt_ru=?,negative_prompt_ru=? WHERE id=?",
+                ("Котёнок","размытость",entry["draft_id"]))
+        r=self.client.post("/api/quick/drafts/"+str(entry["draft_id"])+"/translate",
+            json={"model":"qwen3:8b"})
+        self.assertEqual(r.status_code,200)
+        self.assertTrue(r.get_json()["cached"])
+        self.assertEqual(r.get_json()["prompt_ru"],"Котёнок")
+
+    def test_translation_rejected_during_active_render(self):
+        entry=self.client.put("/api/quick/draft/saved",
+            json={"prompt":"Kitten","negative_prompt":""}).get_json()
+        with patch.object(studio_app,"current_job",return_value={"status":"running"}):
+            r=self.client.post("/api/quick/drafts/"+str(entry["draft_id"])+"/translate")
+        self.assertEqual(r.status_code,409)
 
     def test_empty_prompt_never_starts_gpu(self):
         r=self.client.post("/api/quick/generate",json={"prompt":""})

@@ -18,8 +18,20 @@ class TurtleWaitingUITests(unittest.TestCase):
 
     def test_loader_uses_image_not_font_emoji(self):
         html=(BASE/"templates"/"studio.html").read_text(encoding="utf-8")
-        self.assertIn("turtle.src='/static/images/sea-turtle.webp'",html)
-        self.assertNotIn("turtle.src='/static/images/sea-turtle-swim.svg'",html)
+        self.assertIn("turtle.src='/static/images/sea-turtle-cartoon.svg'",html)
+        self.assertNotIn("createSwimmingTurtle(i)",html)
+        vector=(BASE/"static"/"images"/"sea-turtle-cartoon.svg")
+        self.assertTrue(vector.is_file(), "Original cartoon turtle SVG is missing")
+        import xml.etree.ElementTree as ET
+        body=vector.read_text(encoding="utf-8")
+        ET.fromstring(body)
+        self.assertIn('class="fin-left"',body)
+        self.assertIn('class="fin-right"',body)
+        self.assertIn("@keyframes paddle-left",body)
+        self.assertIn("@keyframes paddle-right",body)
+        self.assertIn("prefers-reduced-motion",body)
+        self.assertLess(len(body.encode("utf-8")),25000)
+        self.assertNotIn("sea-turtle-swim.svg",html)
         self.assertNotIn("createSwimmingTurtle(i)",html)
         self.assertNotIn("turtle-left-clip-",html)
         self.assertNotIn("turtle-right-clip-",html)

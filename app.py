@@ -535,6 +535,55 @@ def jobs_recent():
     return jsonify(jobs=recent_jobs(limit=20))
 
 
+@app.get("/api/prompt-gallery")
+def prompt_gallery():
+    """Real finished images + the exact stored inputs; never fabricate previews."""
+    results=[]
+    for job in recent_jobs(limit=40):
+        if job.get("status")!="completed" or job.get("source")!="quick":
+            continue
+        jid=job.get("job_id","")
+        if not re.fullmatch(r"[0-9a-f]{32}",jid):
+            continue
+        folder=(DATA/"jobs"/jid).resolve()
+        if folder.parent!=(DATA/"jobs").resolve():
+            continue
+        try:
+            spec=json.loads((folder/"spec.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(spec,dict) or not str(spec.get("prompt","")).strip():
+            continue
+        state=get_job(jid) or {}
+        for output in state.get("outputs",[])[:2]:
+            try: variant=int(output.get("variant",0))
+            except (ValueError,TypeError): continue
+            if not 1<=variant<=MAX_VARIANTS: continue
+            image=(folder/"images"/f"{int(spec.get('lesson',0)):03d}_{int(spec.get('slide',0)):02d}_v{variant:02d}.png").resolve()
+            if image.parent!=(folder/"images").resolve() or not image.is_file():
+                continue
+            source=Path(str(spec.get("reference") or "")).name
+            results.append({
+                "job_id":jid, "variant":variant,
+                "image_url":f"/api/jobs/{jid}/images/{variant}",
+                "prompt":str(spec.get("prompt","")),
+                "negative_prompt":str(spec.get("negative_prompt","")),
+                "checkpoint":str(spec.get("checkpoint",DEFAULT_CHECKPOINT)),
+                "seed":int(output.get("seed",spec.get("seed",0))),
+                "steps":int(spec.get("steps",28)),
+                "cfg":float(spec.get("cfg",6.5)),
+                "width":int(spec.get("width",768)),
+                "height":int(spec.get("height",960)),
+                "mode":str(spec.get("mode","txt2img")),
+                "strength":float(spec.get("strength",0.55)),
+                "reference":source if re.fullmatch(r"[0-9a-f]{32}\.png",source) else "",
+                "lora":str(spec.get("lora",""))
+            })
+            if len(results)>=30:break
+        if len(results)>=30:break
+    return jsonify(examples=results,note="Examples are actual saved outputs, not predicted previews.")
+
+
 @app.post("/api/quick/generate")
 def quick_generate():
     """Direct txt2img/img2img. No project, graph or approved node required."""

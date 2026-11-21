@@ -1088,6 +1088,7 @@ $('demoWait').onclick=()=>{
   $('jobBar').value=0;renderWaiting(amount);
  }
 };
+const notifiedFinishedJobs=new Set();
 function stopJobPolling(){if(jobTimer){clearTimeout(jobTimer);jobTimer=null}}
 function scheduleJobRefresh(){
  stopJobPolling();
@@ -1112,7 +1113,13 @@ async function updateJob(){
    renderWaiting(job.total,job.completed);
    if($('monitorPanel').open)await status();
    scheduleJobRefresh();
- }else{stopJobPolling();await refreshJobHistory(false)}
+ }else{
+   stopJobPolling();await refreshJobHistory(false);
+   if(job.status==='completed'&&!notifiedFinishedJobs.has(currentJob)){
+     notifiedFinishedJobs.add(currentJob);
+     document.dispatchEvent(new CustomEvent('draftsman:job-completed',{detail:{job_id:currentJob}}));
+   }
+ }
  $('previews').replaceChildren(...(job.outputs||[]).map(o=>{
    const a=document.createElement('a');a.href=o.preview_url;a.target='_blank';a.rel='noopener';
    const img=document.createElement('img');img.src=o.preview_url;img.loading='lazy';img.alt='Вариант '+o.variant;
@@ -1186,6 +1193,24 @@ $('generate').onclick=()=>task(async()=>{
   await updateJob();
   say('Генерация запущена на RTX 3060 · ожидание показано в карточках');
  }finally{$('generate').disabled=false}
+});
+document.addEventListener('draftsman:open-result',event=>{
+ const id=event.detail?.job_id;
+ if(!/^[0-9a-f]{32}$/.test(id||''))return;
+ currentJob=id;
+ switchMode('quick');
+ task(updateJob);
+});
+document.addEventListener('draftsman:job-started',event=>{
+ const id=event.detail?.job_id;
+ if(!/^[0-9a-f]{32}$/.test(id||''))return;
+ currentJob=id;demoWaiting=false;activeRendering=true;
+ switchMode('quick');
+ $('jobInfo').classList.remove('collapsed');
+ $('jobInfo').textContent='Новое задание '+id+' запущено';
+ $('jobProgress').classList.remove('collapsed');
+ $('jobBar').value=0;renderWaiting(1);
+ task(async()=>{await refreshJobHistory(false);await updateJob()});
 });
 $('checkJob').onclick=()=>task(async()=>{
  if(!currentJob)currentJob=$('jobHistory').value||rowById(chosen)?.last_job||'';

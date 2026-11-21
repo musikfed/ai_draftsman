@@ -5,6 +5,7 @@ import json
 import re
 import sqlite3
 import threading
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import requests
@@ -43,6 +44,11 @@ def migrate(db, data: Path):
         );
         CREATE TABLE IF NOT EXISTS quick_catalog_migrations (
           key TEXT PRIMARY KEY
+        );
+        CREATE TABLE IF NOT EXISTS quick_translation_attempts (
+          draft_id INTEGER PRIMARY KEY,
+          attempted_at TEXT NOT NULL,
+          failed INTEGER NOT NULL DEFAULT 0
         );
     """)
     # Once only, match earlier successful/failed quick generations by exact prompt.
@@ -274,8 +280,12 @@ def register(app, connection, data, ollama_url, ollama_model, current_job, get_j
                     SET prompt_ru=?, negative_prompt_ru=?
                     WHERE id=? AND prompt=? AND negative_prompt=?""",
                     (pos,neg,draft_id,prompt,negative))
+                db.execute("UPDATE quick_translation_attempts SET failed=0 WHERE draft_id=?",
+                           (draft_id,))
         except (requests.RequestException,ValueError,KeyError,OSError):
-            # Missing translation remains empty; reopening the draft can retry.
+            with connection() as db:
+                db.execute("UPDATE quick_translation_attempts SET failed=1 WHERE draft_id=?",
+                           (draft_id,))
             return
         finally:
             with _TRANSLATE_LOCK:
@@ -287,12 +297,37 @@ def register(app, connection, data, ollama_url, ollama_model, current_job, get_j
             return {"error":"Draft not found"},404
         if try_existing_translation(draft_id,row):
             return {"status":"ready","cached":True},200
+        def already_russian(text):
+            if not text.strip():return True
+            cyr=len(re.findall(r"[А-Яа-яЁё]",text))
+            latin=len(re.findall(r"[A-Za-z]",text))
+            return cyr>=max(5,latin)
+        if already_russian(row["prompt"]) and already_russian(row["negative_prompt"]):
+            with connection() as db:
+                db.execute("""UPDATE quick_draft_history
+                    SET prompt_ru=prompt,negative_prompt_ru=negative_prompt WHERE id=?""",
+                    (draft_id,))
+            return {"status":"ready","cached":True,"source":"already_russian"},200
         # No additional GPU workload during an active render, no persistent daemon.
         if current_job():
             return {"status":"deferred","note":"Translation postponed until GPU is idle"},202
         selected=model or ollama_model
         if not re.fullmatch(r"[A-Za-z0-9_.:/-]{2,128}",selected):
             return {"error":"Invalid Ollama model"},400
+        with connection() as db:
+            last=db.execute("""SELECT attempted_at,failed FROM quick_translation_attempts
+                WHERE draft_id=?""",(draft_id,)).fetchone()
+            if last and last["failed"]:
+                try:
+                    previous=datetime.fromisoformat(last["attempted_at"])
+                    if datetime.now(timezone.utc)-previous < timedelta(hours=1):
+                        return {"status":"retry_later","note":"Failed translation is cached for 1 hour"},202
+                except (ValueError,TypeError):
+                    pass
+            db.execute("""INSERT INTO quick_translation_attempts(draft_id,attempted_at,failed)
+                VALUES(?,?,0) ON CONFLICT(draft_id) DO UPDATE SET
+                attempted_at=excluded.attempted_at,failed=0""",
+                (draft_id,datetime.now(timezone.utc).isoformat()))
         with _TRANSLATE_LOCK:
             if draft_id in _TRANSLATING:
                 return {"status":"translating"},202

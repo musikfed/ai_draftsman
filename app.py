@@ -430,7 +430,7 @@ def generate():
 def archive_quick_draft(db, prompt, negative_prompt):
     """Keep saved versions without growing history for repeated identical saves."""
     last=db.execute("""SELECT id,prompt,negative_prompt
-        FROM quick_draft_history ORDER BY id DESC LIMIT 1""").fetchone()
+        FROM quick_draft_history WHERE archived=0 ORDER BY id DESC LIMIT 1""").fetchone()
     if last and last["prompt"]==prompt and last["negative_prompt"]==negative_prompt:
         return last["id"]
     result=db.execute("""INSERT INTO quick_draft_history(prompt,negative_prompt)

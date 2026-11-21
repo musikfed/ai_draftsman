@@ -47,7 +47,20 @@ def initialize():
             negative_prompt TEXT NOT NULL DEFAULT '',
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS quick_draft_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prompt TEXT NOT NULL,
+            negative_prompt TEXT NOT NULL,
+            prompt_ru TEXT,
+            negative_prompt_ru TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
         """)
+        # Preserve the last pre-upgrade quick draft as the initial archived version.
+        db.execute("""INSERT INTO quick_draft_history(prompt,negative_prompt,created_at)
+            SELECT prompt,negative_prompt,updated_at FROM quick_draft
+            WHERE (trim(prompt)<>'' OR trim(negative_prompt)<>'')
+              AND NOT EXISTS(SELECT 1 FROM quick_draft_history)""")
         # Legacy tables are retained for previously created Karate Linux data.
         # A new universal installation starts with no comics or forced 24x5 rows.
         # Optional Karate project templates are imported explicitly by the user.
@@ -321,6 +334,24 @@ def reference_upload():
     return jsonify(saved=True,filename=filename)
 
 
+@app.delete("/api/references/<filename>")
+def reference_delete(filename):
+    """Delete only a previously uploaded reference copy; never touch job images."""
+    if not re.fullmatch(r"[0-9a-f]{32}\.png", filename):
+        return jsonify(error="Invalid uploaded reference filename"), 400
+    if current_job() is not None:
+        return jsonify(error="Image generation is active. Delete references after rendering."), 409
+    directory=(DATA / "references").resolve()
+    candidate=directory / filename
+    if candidate.parent != directory or not candidate.is_file():
+        return jsonify(error="Uploaded reference not found"), 404
+    try:
+        candidate.unlink()
+    except OSError as exc:
+        return jsonify(error=f"Cannot delete uploaded reference: {exc}"), 500
+    return jsonify(deleted=True, filename=filename)
+
+
 @app.get("/api/loras")
 def lora_list():
     folder=BASE/"models"/"loras"
@@ -383,6 +414,87 @@ def generate():
         return jsonify(error=str(exc)),422
 
 
+def archive_quick_draft(db, prompt, negative_prompt):
+    """Keep saved versions without growing history for repeated identical saves."""
+    last=db.execute("""SELECT id,prompt,negative_prompt
+        FROM quick_draft_history ORDER BY id DESC LIMIT 1""").fetchone()
+    if last and last["prompt"]==prompt and last["negative_prompt"]==negative_prompt:
+        return last["id"]
+    result=db.execute("""INSERT INTO quick_draft_history(prompt,negative_prompt)
+        VALUES(?,?)""",(prompt,negative_prompt))
+    return result.lastrowid
+
+
+@app.get("/api/quick/drafts")
+def quick_draft_history():
+    with connection() as db:
+        rows=db.execute("""SELECT id,created_at,substr(prompt,1,110) AS preview,
+            (prompt_ru IS NOT NULL AND negative_prompt_ru IS NOT NULL) AS translated
+            FROM quick_draft_history ORDER BY id DESC LIMIT 100""").fetchall()
+    return jsonify(drafts=[dict(row) for row in rows])
+
+
+@app.get("/api/quick/drafts/<int:draft_id>")
+def quick_draft_details(draft_id):
+    with connection() as db:
+        row=db.execute("""SELECT id,prompt,negative_prompt,prompt_ru,
+            negative_prompt_ru,created_at FROM quick_draft_history WHERE id=?""",
+            (draft_id,)).fetchone()
+    if row is None:
+        return jsonify(error="Draft not found"),404
+    return jsonify(dict(row))
+
+
+@app.post("/api/quick/drafts/<int:draft_id>/translate")
+def quick_draft_translate(draft_id):
+    """Explicit Russian translation via local Ollama; never run during a GPU render."""
+    if current_job() is not None:
+        return jsonify(error="Wait for active GPU rendering before translation"),409
+    data=request.get_json(silent=True) or {}
+    model=str(data.get("model") or OLLAMA_MODEL)
+    if not re.fullmatch(r"[A-Za-z0-9_.:/-]{2,128}",model):
+        return jsonify(error="Invalid Ollama model"),400
+    with connection() as db:
+        row=db.execute("""SELECT id,prompt,negative_prompt,prompt_ru,
+            negative_prompt_ru FROM quick_draft_history WHERE id=?""",
+            (draft_id,)).fetchone()
+    if row is None:
+        return jsonify(error="Draft not found"),404
+    if row["prompt_ru"] is not None and row["negative_prompt_ru"] is not None:
+        return jsonify(translated=True,prompt_ru=row["prompt_ru"],
+                       negative_prompt_ru=row["negative_prompt_ru"],cached=True)
+    try:
+        response=requests.post(OLLAMA_URL+"/api/chat",json={
+            "model":model,"stream":False,"format":"json","keep_alive":"0s",
+            "options":{"temperature":0},
+            "messages":[
+                {"role":"system","content":
+                 "Translate two image-generation prompts into natural Russian. "
+                 "Return ONLY a JSON object with string keys prompt_ru and negative_prompt_ru. "
+                 "Preserve the original intent, model tokens, commands, and English proper names. "
+                 "Do not improve, add, or remove instructions. Return an empty translation "
+                 "when its input is empty."},
+                {"role":"user","content":json.dumps({
+                    "prompt":row["prompt"],"negative_prompt":row["negative_prompt"]
+                 },ensure_ascii=False)}
+            ]
+        },timeout=180)
+        response.raise_for_status()
+        answer=json.loads(response.json()["message"]["content"])
+        prompt_ru=str(answer.get("prompt_ru") or "").strip()[:16000]
+        negative_ru=str(answer.get("negative_prompt_ru") or "").strip()[:4000]
+        if row["prompt"].strip() and not prompt_ru:
+            return jsonify(error="Ollama returned an empty translation"),422
+        if row["negative_prompt"].strip() and not negative_ru:
+            return jsonify(error="Ollama returned an empty negative translation"),422
+    except (KeyError,ValueError,requests.RequestException) as exc:
+        return jsonify(error=f"Translation failed: {exc}"),502
+    with connection() as db:
+        db.execute("""UPDATE quick_draft_history SET prompt_ru=?,negative_prompt_ru=?
+            WHERE id=?""",(prompt_ru,negative_ru,draft_id))
+    return jsonify(translated=True,prompt_ru=prompt_ru,negative_prompt_ru=negative_ru)
+
+
 @app.get("/api/quick/draft/saved")
 def quick_saved():
     with connection() as db:
@@ -403,7 +515,8 @@ def quick_save_draft():
             ON CONFLICT(id) DO UPDATE SET
                 prompt=excluded.prompt, negative_prompt=excluded.negative_prompt,
                 updated_at=CURRENT_TIMESTAMP""",(positive,negative))
-    return jsonify(saved=True)
+        version_id=archive_quick_draft(db,positive,negative)
+    return jsonify(saved=True,draft_id=version_id)
 
 
 @app.get("/api/jobs/recent")

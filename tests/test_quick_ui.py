@@ -18,9 +18,8 @@ class QuickStudioLayoutTests(unittest.TestCase):
     def test_positive_and_negative_prompts_both_have_readonly_ru_column(self):
         for field in ("quickPrompt","quickPromptRu","quickNegative","quickNegativeRu"):
             self.assertIn('id="'+field+'"',self.html)
-        for field in ("quickPromptRu","quickNegativeRu"):
-            self.assertIn('id="'+field+'" readonly',self.html) if field=="quickPromptRu" else self.assertIn(
-                'id="'+field+'" rows="3" readonly',self.html)
+        self.assertIn('id="quickPromptRu" readonly',self.html)
+        self.assertIn('id="quickNegativeRu" rows="3" readonly',self.html)
         self.assertGreaterEqual(self.html.count('class="quick-prompts-pair"'),2)
         self.assertIn('className=\'catalog-prompt-pair\'',self.drafts)
         self.assertIn(".catalog-prompt-pair{display:grid",self.css)

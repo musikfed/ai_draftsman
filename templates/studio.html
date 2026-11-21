@@ -256,7 +256,7 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
    <label data-t="reference">Изображение-образец (только для img2img)</label><select id="reference"><option value="">Без референса</option></select>
    <div class="toolbar"><input id="referenceFile" type="file" accept=".jpg,.jpeg,.png,.webp" class="grow"><button id="uploadReference" data-t="upload">Добавить образец</button><button id="deleteReference" class="danger">Удалить образец</button></div>
    <div id="referenceHint" class="muted">Для img2img выбери файл и нажми «Добавить образец».</div>
-   <img id="referencePreview" class="collapsed" alt="Предпросмотр выбранного образца" style="display:block;max-width:185px;max-height:240px;object-fit:contain;margin:8px 0;border-radius:7px;border:1px solid #43607d">
+   <img id="referencePreview" class="collapsed" alt="Предпросмотр выбранного образца" style="max-width:185px;max-height:240px;object-fit:contain;margin:8px 0;border-radius:7px;border:1px solid #43607d">
    <label>SDXL LoRA</label><select id="lora"><option value="">Без LoRA</option></select>
    <div class="toolbar" style="margin-top:10px"><button id="generate" class="primary" data-t="generate">Генерировать</button><button id="checkJob" data-t="checkJob">Проверить результат</button><button id="demoWait">🌊 Демо ожидания</button><button id="resetRenderSettings">↺ Сбросить параметры</button></div>
    <div id="jobProgress" class="collapsed"><div class="muted" id="jobStage">Загрузка модели</div><progress id="jobBar" max="100" value="0"></progress><div id="waitGrid" class="wait-grid"></div></div>

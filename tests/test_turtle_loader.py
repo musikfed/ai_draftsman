@@ -1,6 +1,6 @@
-"""Lightweight regression tests for the sea turtle job waiting scene.
+"""Regression tests for the lightweight bubble-only generation waiting scene.
 
-These checks do not start Flask, Ollama, CUDA or any image generation.
+No Flask server, CUDA or Ollama is started.
 """
 import unittest
 from pathlib import Path
@@ -8,60 +8,40 @@ from pathlib import Path
 BASE=Path(__file__).resolve().parents[1]
 
 
-class TurtleWaitingUITests(unittest.TestCase):
-    def test_asset_is_real_small_transparent_webp(self):
-        path=BASE/"static"/"images"/"sea-turtle.webp"
-        self.assertTrue(path.is_file(), "Missing local turtle asset")
-        payload=path.read_bytes()
-        self.assertTrue(payload.startswith(b"RIFF") and payload[8:12]==b"WEBP")
-        self.assertLess(len(payload), 25000, "Loader image should not burden browser")
+class WaitingBubblesUITests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.html=(BASE/"templates"/"studio.html").read_text(encoding="utf-8")
 
-    def test_loader_uses_image_not_font_emoji(self):
-        html=(BASE/"templates"/"studio.html").read_text(encoding="utf-8")
-        self.assertIn("turtle.src='/static/images/sea-turtle-cartoon.svg'",html)
-        self.assertNotIn("createSwimmingTurtle(i)",html)
-        vector=(BASE/"static"/"images"/"sea-turtle-cartoon.svg")
-        self.assertTrue(vector.is_file(), "Original cartoon turtle SVG is missing")
-        import xml.etree.ElementTree as ET
-        body=vector.read_text(encoding="utf-8")
-        ET.fromstring(body)
-        self.assertIn('class="swim-left"',body)
-        self.assertIn('class="swim-right"',body)
-        self.assertIn("@keyframes strokeLeft",body)
-        self.assertIn("@keyframes strokeRight",body)
-        self.assertIn("<ellipse cx=\"615\"",body)
-        self.assertIn("<ellipse cx=\"737\"",body)
-        self.assertIn("prefers-reduced-motion",body)
-        self.assertLess(len(body.encode("utf-8")),25000)
-        self.assertNotIn("sea-turtle-swim.svg",html)
-        self.assertNotIn("createSwimmingTurtle(i)",html)
-        self.assertNotIn("turtle-left-clip-",html)
-        self.assertNotIn("turtle-right-clip-",html)
-        svg_path=BASE/"static"/"images"/"sea-turtle-swim.svg"
-        self.assertTrue(svg_path.is_file(), "Missing detailed vector turtle")
-        svg=svg_path.read_text(encoding="utf-8")
-        import xml.etree.ElementTree as ET
-        ET.fromstring(svg)
-        self.assertIn('class="near-flipper"',svg)
-        self.assertIn('class="far-flipper"',svg)
-        self.assertIn("@keyframes near-stroke",svg)
-        self.assertIn("@keyframes far-stroke",svg)
-        self.assertIn("prefers-reduced-motion",svg)
-        self.assertLess(len(svg.encode("utf-8")),55000)
-        self.assertNotIn("turtle.textContent='🐢'",html)
-        self.assertIn("@keyframes sea-turtle-swim",html)
+    def test_no_turtle_asset_or_animation_is_used(self):
+        html=self.html
+        self.assertNotIn("wait-turtle",html)
+        self.assertNotIn("turtle.src=",html)
+        self.assertNotIn("sea-turtle-swim",html)
+        self.assertNotIn("sea-turtle-cartoon.svg",html)
+        self.assertNotIn("черепашк",html.lower())
+
+    def test_many_bubbles_have_random_color_size_position_and_speed(self):
+        html=self.html
+        self.assertIn("const bubbleCount=visible===1?26:16;",html)
+        self.assertIn("Math.random",html)
+        for variable in ("--bubble-size","--bubble-x","--bubble-hue",
+                         "--bubble-speed","--bubble-delay","--bubble-drift"):
+            self.assertIn("bubble.style.setProperty('"+variable+"'",html)
         self.assertIn("@keyframes bubble-float",html)
-        self.assertIn("prefers-reduced-motion",html)
-        self.assertIn("grid.classList.toggle('single',visible===1)",html)
-        self.assertIn("renderWaiting(job.total,job.completed)",html)
-        self.assertIn('id="demoWait"',html)
-        self.assertIn("renderWaiting(amount)",html)
-        self.assertIn("Демо: черепаха плавает, но GPU не запущен",html)
+        self.assertIn("hsl(var(--bubble-hue",html)
+        self.assertIn("will-change:transform",html)
 
-    def test_waiting_only_for_active_jobs(self):
-        html=(BASE/"templates"/"studio.html").read_text(encoding="utf-8")
+    def test_waiting_only_during_active_jobs(self):
+        html=self.html
         self.assertIn("const busy=['running','queued'].includes(job.status)",html)
+        self.assertIn("renderWaiting(job.total,job.completed)",html)
+        self.assertIn("renderWaiting(amount)",html)
+        self.assertIn("grid.classList.toggle('single',visible===1)",html)
         self.assertIn("stopJobPolling();await refreshJobHistory(false)",html)
+        self.assertIn('id="demoWait"',html)
+        self.assertIn("GPU не запущен",html)
+        self.assertIn("prefers-reduced-motion",html)
 
 
 if __name__=="__main__":

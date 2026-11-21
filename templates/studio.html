@@ -845,9 +845,46 @@ function switchMode(next){
 }
 $('quickTab').onclick=()=>switchMode('quick');
 $('graphTab').onclick=()=>switchMode('graph');
+async function refreshDraftLibrary(selected){
+ const r=await api('/api/quick/drafts'),rows=r.drafts||[];
+ const old=String(selected||$('draftHistorySelect').value||'');
+ $('draftHistorySelect').replaceChildren(...rows.map(d=>opt(d.id,
+  '#'+d.id+' · '+d.created_at+' · '+(d.translated?'RU ✓ · ':'')+(d.preview||'(пустой)'))));
+ if(old&&rows.some(d=>String(d.id)===old))$('draftHistorySelect').value=old;
+ if(rows.length)await showDraftLibraryItem();
+ else $('draftHistoryPreview').textContent='Сохранённых версий пока нет';
+}
+async function showDraftLibraryItem(){
+ const id=$('draftHistorySelect').value;if(!id)return;
+ const d=await api('/api/quick/drafts/'+encodeURIComponent(id));
+ $('draftHistoryPreview').textContent=[
+  'ОРИГИНАЛ:',d.prompt,'','НЕГАТИВНЫЙ:',d.negative_prompt,
+  '','ПЕРЕВОД НА РУССКИЙ:',d.prompt_ru??'(не переводился)',
+  '','НЕГАТИВНЫЙ — ПЕРЕВОД:',d.negative_prompt_ru??'(не переводился)'
+ ].join('\n');
+}
+$('draftHistorySelect').addEventListener('change',()=>task(showDraftLibraryItem));
+$('refreshDrafts').onclick=()=>task(()=>refreshDraftLibrary());
+$('openDraft').onclick=()=>task(async()=>{
+ const id=$('draftHistorySelect').value;if(!id)return;
+ const d=await api('/api/quick/drafts/'+encodeURIComponent(id));
+ $('quickPrompt').value=d.prompt;$('quickNegative').value=d.negative_prompt;
+ rememberSetting('quickPrompt');rememberSetting('quickNegative');
+ say('Черновик #'+id+' восстановлен без запуска генерации');
+});
+$('translateDraft').onclick=()=>task(async()=>{
+ const id=$('draftHistorySelect').value;
+ if(!id)throw Error('Выбери сохранённый черновик');
+ say('Перевод двух промптов локальной Ollama...');
+ await api('/api/quick/drafts/'+encodeURIComponent(id)+'/translate','POST',{model:$('quickLLM').value});
+ await refreshDraftLibrary(id);
+ say('Перевод сохранён рядом с оригинальным черновиком #'+id);
+});
 $('saveQuick').onclick=()=>task(async()=>{
- await api('/api/quick/draft/saved','PUT',{prompt:$('quickPrompt').value,negative_prompt:$('quickNegative').value});
- say('Черновик сохранён в SQLite');
+ const d=await api('/api/quick/draft/saved','PUT',
+  {prompt:$('quickPrompt').value,negative_prompt:$('quickNegative').value});
+ await refreshDraftLibrary(d.draft_id);
+ say('Черновик #'+d.draft_id+' сохранён в SQLite');
 });
 $('quickDraftAI').onclick=()=>task(async()=>{
  const idea=$('quickPrompt').value.trim();if(!idea)throw Error('Сначала опиши изображение');
@@ -855,7 +892,9 @@ $('quickDraftAI').onclick=()=>task(async()=>{
  const result=await api('/api/quick/draft','POST',{idea,model:$('quickLLM').value});
  $('quickPrompt').value=result.prompt;$('quickNegative').value=result.negative_prompt||'';
  rememberSetting('quickPrompt');rememberSetting('quickNegative');
- await api('/api/quick/draft/saved','PUT',{prompt:result.prompt,negative_prompt:result.negative_prompt||''});
+ const d=await api('/api/quick/draft/saved','PUT',
+  {prompt:result.prompt,negative_prompt:result.negative_prompt||''});
+ await refreshDraftLibrary(d.draft_id);
  say('Промпт подготовлен и сохранён — проверь перед генерацией');
 });
 function renderWaiting(total,completed=0){
@@ -971,7 +1010,8 @@ $('generate').onclick=()=>task(async()=>{
     const prompt=$('quickPrompt').value.trim();
     if(!prompt)throw Error('Напиши, что нужно нарисовать');
     const negative_prompt=$('quickNegative').value;
-    await api('/api/quick/draft/saved','PUT',{prompt,negative_prompt});
+    const d=await api('/api/quick/draft/saved','PUT',{prompt,negative_prompt});
+    await refreshDraftLibrary(d.draft_id);
     response=await api('/api/quick/generate','POST',{...settings,prompt,negative_prompt});
   }else{
     if(!project||!chosen)throw Error('Выбери узел графа или переключись в быстрый режим');
@@ -1021,6 +1061,7 @@ async function startup(){
  await Promise.all([loadProjects(),refreshResources(),loadImageModels()]);
  await updateDownloadProgress();
  await refreshJobHistory(true);
+ await refreshDraftLibrary();
  await status();
 }
 window.addEventListener('resize',()=>{

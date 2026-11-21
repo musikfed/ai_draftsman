@@ -18,7 +18,7 @@ class TurtleWaitingUITests(unittest.TestCase):
 
     def test_loader_uses_image_not_font_emoji(self):
         html=(BASE/"templates"/"studio.html").read_text(encoding="utf-8")
-        self.assertIn("turtle.src='/static/images/sea-turtle-swim.svg'",html)
+        self.assertIn("turtle.src='/static/images/sea-turtle.webp'",html)
         self.assertNotIn("createSwimmingTurtle(i)",html)
         self.assertNotIn("turtle-left-clip-",html)
         self.assertNotIn("turtle-right-clip-",html)

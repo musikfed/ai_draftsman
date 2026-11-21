@@ -337,7 +337,7 @@ def reference_upload():
 @app.get("/api/references/<filename>/preview")
 def reference_preview(filename):
     """Preview only an uploaded local PNG, never arbitrary filesystem paths."""
-    if not re.fullmatch(r"[0-9a-f]{32}\\.png", filename):
+    if not re.fullmatch(r"[0-9a-f]{32}\.png", filename):
         return jsonify(error="Invalid uploaded reference filename"),400
     path=(DATA/"references"/filename).resolve()
     if path.parent!=(DATA/"references").resolve() or not path.is_file():

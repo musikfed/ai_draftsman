@@ -83,7 +83,7 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
  background:radial-gradient(ellipse at 20% 20%,#a0f3e431,transparent 50%),
  radial-gradient(ellipse at 70% 50%,#49c7d526,transparent 65%);
  animation:underwater-current 11s ease-in-out infinite alternate;pointer-events:none}
-.wait-turtle{display:block;width:clamp(140px,88%,230px);height:160px;max-width:95%;
+.wait-turtle{display:block;width:clamp(96px,85%,170px);height:128px;max-width:90%;
  object-fit:contain;position:relative;z-index:2;pointer-events:none;
  filter:drop-shadow(0 8px 9px #0013278c);transform-origin:50% 56%;
  animation:sea-turtle-swim 9s ease-in-out infinite}
@@ -156,6 +156,17 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
     <button id="saveQuick" class="primary">Сохранить черновик</button>
    </div>
    <p class="muted">Черновик хранится в SQLite. Готовые изображения и параметры задания хранятся на сервере.</p>
+   <details id="draftHistoryPanel" style="margin-top:12px">
+    <summary>Библиотека черновиков · сохранённые версии и перевод на русский</summary>
+    <p class="muted">При каждом отличающемся сохранении создаётся версия. Перевод через локальную Ollama — только по кнопке.</p>
+    <div class="toolbar">
+     <select id="draftHistorySelect" class="grow" aria-label="Выбор сохранённого черновика"></select>
+     <button id="openDraft">Загрузить в поля</button>
+     <button id="translateDraft">Перевести на русский</button>
+     <button id="refreshDrafts">↻ Список</button>
+    </div>
+    <pre id="draftHistoryPreview" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow-y:auto" aria-live="polite"></pre>
+   </details>
   </div>
   <div class="panel">
    <h2 data-t="projects">Проекты</h2>
@@ -243,9 +254,11 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
 <div class="muted" id="modelRole">Ollama пишет промпты. SDXL рисует на GPU; LoRA помогает сохранять стиль.</div><div class="muted" id="variantsHint">Авто — из текста («сделай 7 вариантов»), либо введи 1–48.</div>
 <label data-t="strength">Сила img2img (0.15–0.90)</label><input id="strength" type="number" min=".15" max=".9" step=".05" value=".55">
    <label data-t="reference">Изображение-образец (только для img2img)</label><select id="reference"><option value="">Без референса</option></select>
-   <div class="toolbar"><input id="referenceFile" type="file" accept=".jpg,.jpeg,.png,.webp" class="grow"><button id="uploadReference" data-t="upload">Добавить образец</button></div>
+   <div class="toolbar"><input id="referenceFile" type="file" accept=".jpg,.jpeg,.png,.webp" class="grow"><button id="uploadReference" data-t="upload">Добавить образец</button><button id="deleteReference" class="danger">Удалить образец</button></div>
+   <div id="referenceHint" class="muted">Для img2img выбери файл и нажми «Добавить образец».</div>
+   <img id="referencePreview" class="collapsed" alt="Предпросмотр выбранного образца" style="max-width:185px;max-height:240px;object-fit:contain;margin:8px 0;border-radius:7px;border:1px solid #43607d">
    <label>SDXL LoRA</label><select id="lora"><option value="">Без LoRA</option></select>
-   <div class="toolbar" style="margin-top:10px"><button id="generate" class="primary" data-t="generate">Генерировать</button><button id="checkJob" data-t="checkJob">Проверить результат</button><button id="demoWait">🌊 Демо ожидания</button></div>
+   <div class="toolbar" style="margin-top:10px"><button id="generate" class="primary" data-t="generate">Генерировать</button><button id="checkJob" data-t="checkJob">Проверить результат</button><button id="demoWait">🌊 Демо ожидания</button><button id="resetRenderSettings">↺ Сбросить параметры</button></div>
    <div id="jobProgress" class="collapsed"><div class="muted" id="jobStage">Загрузка модели</div><progress id="jobBar" max="100" value="0"></progress><div id="waitGrid" class="wait-grid"></div></div>
    <pre id="jobInfo" class="collapsed"></pre><div id="previews"></div>
    <details><summary>История генераций — сохраняется после F5</summary>
@@ -462,11 +475,22 @@ async function refreshLLM(preferred){
  $('quickLLM').value=q;
  $('llmInfo').textContent=list.length?'Установлено '+list.length+' моделей: '+list.join(', ')+'. Новые загрузки Ollama могут попасть на системный диск.':'Ollama не отвечает; проверь службу.';
 }
+function updateReferencePreview(){
+ const filename=$('reference').value,preview=$('referencePreview');
+ if(filename){
+  preview.src='/api/references/'+encodeURIComponent(filename)+'/preview';
+  preview.classList.remove('collapsed');
+ }else{
+  preview.classList.add('collapsed');
+  preview.removeAttribute('src');
+ }
+}
 async function refreshResources(){
  const r=await api('/api/references');
  const old=readSetting('reference')??$('reference').value;
  $('reference').replaceChildren(opt('','Без референса'),...r.references.map(x=>opt(x,x)));
  if(r.references.includes(old))$('reference').value=old;
+ updateReferencePreview();
  const l=await api('/api/loras');
  const oldLora=readSetting('lora')??$('lora').value;
  $('lora').replaceChildren(opt('','Без LoRA'),...l.loras.map(x=>opt(x,x)));
@@ -783,14 +807,47 @@ document.addEventListener('visibilitychange',()=>{
   if(st.status==='running')await updateDownloadProgress();
  });
 });
+$('referenceFile').addEventListener('change',()=>{
+ $('referenceHint').textContent=$('referenceFile').files.length
+ ?'Файл выбран, но НЕ загружен. Нажми «Добавить образец», чтобы включить img2img.'
+ :'Файл образца не выбран.';
+});
+$('reference').addEventListener('change',()=>{
+ if($('reference').value){$('renderMode').value='img2img';rememberSetting('renderMode')}
+ $('referenceHint').textContent=$('reference').value?'Загруженный образец выбран · режим «По образцу»':'Без активного образца';
+ updateReferencePreview();
+});
 $('uploadReference').onclick=()=>task(async()=>{
- const f=$('referenceFile').files[0];if(!f)throw Error('Выбери PNG/JPEG/WEBP');
+ const f=$('referenceFile').files[0];if(!f)throw Error('Сначала выбери PNG/JPEG/WEBP');
  const form=new FormData();form.append('file',f);
  const r=await api('/api/references/upload','POST',form);
- await refreshResources();$('reference').value=r.filename;$('renderMode').value='img2img';
+ await refreshResources();$('reference').value=r.filename;
+ $('renderMode').value='img2img';$('referenceFile').value='';
  rememberSetting('reference');rememberSetting('renderMode');
- say('Образец загружен');
+ updateReferencePreview();
+ $('referenceHint').textContent='Образец загружен · режим «По образцу»';
+ say('Образец загружен, выбран и включён');
 });
+$('deleteReference').onclick=()=>task(async()=>{
+ const name=$('reference').value;
+ if(!name){say('Выбери загруженный образец');return}
+ if(!confirm('Удалить образец '+name+' из студии? Готовые результаты останутся.'))return;
+ await api('/api/references/'+encodeURIComponent(name),'DELETE');
+ try{localStorage.removeItem('draftsman_setting_reference')}catch(e){}
+ $('reference').value='';await refreshResources();
+ $('referenceHint').textContent='Образец удалён.';
+ say('Образец удалён из студии');
+});
+$('resetRenderSettings').onclick=()=>{
+ if(!confirm('Сбросить только параметры генерации? Черновики и изображения останутся.'))return;
+ const defaults={variants:'1',resolution:'768x960',seed:'0',steps:'28',cfg:'6.5',
+  strength:'0.55',renderMode:'txt2img',reference:'',lora:''};
+ for(const [id,value] of Object.entries(defaults)){$(id).value=value;rememberSetting(id)}
+ $('referenceFile').value='';
+ updateReferencePreview();
+ $('referenceHint').textContent='Сброшено: по описанию, без референса и LoRA.';
+ say('Параметры сброшены без удаления изображений и черновиков');
+};
 
 function switchMode(next){
  currentMode=next==='quick'?'quick':'graph';
@@ -803,9 +860,46 @@ function switchMode(next){
 }
 $('quickTab').onclick=()=>switchMode('quick');
 $('graphTab').onclick=()=>switchMode('graph');
+async function refreshDraftLibrary(selected){
+ const r=await api('/api/quick/drafts'),rows=r.drafts||[];
+ const old=String(selected||$('draftHistorySelect').value||'');
+ $('draftHistorySelect').replaceChildren(...rows.map(d=>opt(d.id,
+  '#'+d.id+' · '+d.created_at+' · '+(d.translated?'RU ✓ · ':'')+(d.preview||'(пустой)'))));
+ if(old&&rows.some(d=>String(d.id)===old))$('draftHistorySelect').value=old;
+ if(rows.length)await showDraftLibraryItem();
+ else $('draftHistoryPreview').textContent='Сохранённых версий пока нет';
+}
+async function showDraftLibraryItem(){
+ const id=$('draftHistorySelect').value;if(!id)return;
+ const d=await api('/api/quick/drafts/'+encodeURIComponent(id));
+ $('draftHistoryPreview').textContent=[
+  'ОРИГИНАЛ:',d.prompt,'','НЕГАТИВНЫЙ:',d.negative_prompt,
+  '','ПЕРЕВОД НА РУССКИЙ:',d.prompt_ru??'(не переводился)',
+  '','НЕГАТИВНЫЙ — ПЕРЕВОД:',d.negative_prompt_ru??'(не переводился)'
+ ].join('\n');
+}
+$('draftHistorySelect').addEventListener('change',()=>task(showDraftLibraryItem));
+$('refreshDrafts').onclick=()=>task(()=>refreshDraftLibrary());
+$('openDraft').onclick=()=>task(async()=>{
+ const id=$('draftHistorySelect').value;if(!id)return;
+ const d=await api('/api/quick/drafts/'+encodeURIComponent(id));
+ $('quickPrompt').value=d.prompt;$('quickNegative').value=d.negative_prompt;
+ rememberSetting('quickPrompt');rememberSetting('quickNegative');
+ say('Черновик #'+id+' восстановлен без запуска генерации');
+});
+$('translateDraft').onclick=()=>task(async()=>{
+ const id=$('draftHistorySelect').value;
+ if(!id)throw Error('Выбери сохранённый черновик');
+ say('Перевод двух промптов локальной Ollama...');
+ await api('/api/quick/drafts/'+encodeURIComponent(id)+'/translate','POST',{model:$('quickLLM').value});
+ await refreshDraftLibrary(id);
+ say('Перевод сохранён рядом с оригинальным черновиком #'+id);
+});
 $('saveQuick').onclick=()=>task(async()=>{
- await api('/api/quick/draft/saved','PUT',{prompt:$('quickPrompt').value,negative_prompt:$('quickNegative').value});
- say('Черновик сохранён в SQLite');
+ const d=await api('/api/quick/draft/saved','PUT',
+  {prompt:$('quickPrompt').value,negative_prompt:$('quickNegative').value});
+ await refreshDraftLibrary(d.draft_id);
+ say('Черновик #'+d.draft_id+' сохранён в SQLite');
 });
 $('quickDraftAI').onclick=()=>task(async()=>{
  const idea=$('quickPrompt').value.trim();if(!idea)throw Error('Сначала опиши изображение');
@@ -813,7 +907,9 @@ $('quickDraftAI').onclick=()=>task(async()=>{
  const result=await api('/api/quick/draft','POST',{idea,model:$('quickLLM').value});
  $('quickPrompt').value=result.prompt;$('quickNegative').value=result.negative_prompt||'';
  rememberSetting('quickPrompt');rememberSetting('quickNegative');
- await api('/api/quick/draft/saved','PUT',{prompt:result.prompt,negative_prompt:result.negative_prompt||''});
+ const d=await api('/api/quick/draft/saved','PUT',
+  {prompt:result.prompt,negative_prompt:result.negative_prompt||''});
+ await refreshDraftLibrary(d.draft_id);
  say('Промпт подготовлен и сохранён — проверь перед генерацией');
 });
 function renderWaiting(total,completed=0){
@@ -827,7 +923,7 @@ function renderWaiting(total,completed=0){
   for(let i=0;i<visible;i++){
    const card=document.createElement('div');card.className='wait-slot';
    const turtle=document.createElement('img');turtle.className='wait-turtle';
-   turtle.src='/static/images/sea-turtle-swim.svg';turtle.alt='';
+   turtle.src='/static/images/sea-turtle.webp';turtle.alt='';
    turtle.width=230;turtle.height=160;turtle.decoding='async';
    turtle.setAttribute('aria-hidden','true');card.append(turtle);
    const caption=document.createElement('span');caption.className='wait-caption';card.append(caption);
@@ -907,9 +1003,22 @@ async function refreshJobHistory(restore){
    await updateJob();
  }
 }
+function conflictingPromptRules(positive,negative){
+ const p=positive.toLowerCase(),n=negative.toLowerCase();
+ const rules=[
+  [/comic|манг|комикс/,/no (?:comic|manga)|no comic book panels|без комикс|без манг/,'комикс / манга'],
+  [/terminal|code|linux|computer|техно|терминал/,/no tech elements|no linux logos|no linux symbols|without technology|без технолог|без терминал/,'технические элементы'],
+  [/martial arts|karate|карате/,/no martial arts|no karate|без карате/,'карате']
+ ];
+ return rules.filter(([a,b])=>a.test(p)&&b.test(n)).map(x=>x[2]);
+}
 $('generate').onclick=()=>task(async()=>{
  $('generate').disabled=true;
  try{
+  if($('referenceFile').files.length)
+   throw Error('Выбранный файл ещё НЕ добавлен. Нажми «Добавить образец».');
+  if($('renderMode').value==='img2img'&&!$('reference').value)
+   throw Error('Режим «По образцу» требует загруженного референса.');
   const [width,height]=$('resolution').value.split('x').map(Number);
   const variantText=$('variants').value.trim()||'авто';
   if(!/^(?:авто|auto|[1-9][0-9]?)$/i.test(variantText) ||
@@ -925,7 +1034,11 @@ $('generate').onclick=()=>task(async()=>{
     const prompt=$('quickPrompt').value.trim();
     if(!prompt)throw Error('Напиши, что нужно нарисовать');
     const negative_prompt=$('quickNegative').value;
-    await api('/api/quick/draft/saved','PUT',{prompt,negative_prompt});
+    const conflicts=conflictingPromptRules(prompt,negative_prompt);
+    if(conflicts.length&&!confirm('ПРОТИВОРЕЧИЕ: отрицательный промпт запрещает '+conflicts.join(', ')+
+     ', хотя положительный их запрашивает. Продолжить генерацию несмотря на противоречие?'))return;
+    const d=await api('/api/quick/draft/saved','PUT',{prompt,negative_prompt});
+    await refreshDraftLibrary(d.draft_id);
     response=await api('/api/quick/generate','POST',{...settings,prompt,negative_prompt});
   }else{
     if(!project||!chosen)throw Error('Выбери узел графа или переключись в быстрый режим');
@@ -975,6 +1088,7 @@ async function startup(){
  await Promise.all([loadProjects(),refreshResources(),loadImageModels()]);
  await updateDownloadProgress();
  await refreshJobHistory(true);
+ await refreshDraftLibrary();
  await status();
 }
 window.addEventListener('resize',()=>{

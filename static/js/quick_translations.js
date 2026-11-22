@@ -8,8 +8,9 @@
  if(!E('quickPromptRu')||!E('quickNegativeRu'))return;
  const state={draftId:null,serial:0,timer:null,nextAttempt:0,serverStatus:''};
  const current=()=>({prompt:E('quickPrompt').value,negative_prompt:E('quickNegative').value});
- const same=d=>d.prompt===current().prompt &&
-                d.negative_prompt===current().negative_prompt;
+ const same=d=>(d.prompt===current().prompt ||
+                 d.prompt===current().prompt.trim()) &&
+                 d.negative_prompt===current().negative_prompt;
  const info=message=>{if(E('quickTranslationStatus'))
    E('quickTranslationStatus').textContent=message};
  function display(pos,neg,message){

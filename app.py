@@ -108,6 +108,30 @@ def status():
     return jsonify(snapshot)
 
 
+@app.get("/api/jobs/active")
+def active_generation():
+    """Lightweight, authoritative single-GPU status for every browser tab."""
+    job=current_job()
+    if job is None:
+        return jsonify(active=False)
+    job_id=str(job.get("job_id") or "")
+    details={}
+    if re.fullmatch(r"[0-9a-f]{32}",job_id):
+        manifest=DATA/"jobs"/job_id/"spec.json"
+        try:
+            details=json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError,ValueError):
+            pass
+    return jsonify(active=True,job_id=job_id,
+                   status=job.get("status","queued"),
+                   stage=job.get("stage","Ожидание GPU"),
+                   progress=job.get("progress",0),
+                   completed=job.get("completed",0),
+                   total=job.get("total",1),
+                   rerun_source_result_id=details.get("rerun_source_result_id",0),
+                   rerun_source_draft_id=details.get("rerun_source_draft_id",0))
+
+
 @app.post("/api/shutdown")
 def shutdown():
     """Stop only this Flask studio. It is launched manually via scripts/run.sh."""
@@ -606,6 +630,11 @@ def quick_generate():
 
 
 def create_quick_generation(data):
+    # No GPU queue: decline immediately, BEFORE writing a new forked draft.
+    active=current_job()
+    if active is not None:
+        return jsonify(error="GPU занят текущей генерацией. Дождись результата; очередь отключена.",
+                       active_job_id=active.get("job_id")),409
     prompt = str(data.get("prompt") or "").strip()
     negative_prompt = str(data.get("negative_prompt") or "").strip()
     if not prompt or len(prompt) > 16000 or len(negative_prompt) > 4000:
@@ -657,7 +686,26 @@ def create_quick_generation(data):
         "width": width, "height": height,
         "reference": reference, "lora": lora, "lora_scale": 0.7
     }
+    # A rerender from a result card must identify its source result exactly.
+    source_result_id=data.get("_source_result_id")
+    if source_result_id is not None:
+        if type(source_result_id) is not int or source_result_id < 1:
+            return jsonify(error="Invalid source result index"),400
+        parent=data.get("_fork_from")
+        try:
+            parent=int(parent)
+        except (TypeError, ValueError):
+            return jsonify(error="Source draft required for result rerender"),400
+        with connection() as db:
+            source=db.execute("""SELECT 1 FROM quick_result_index r
+                JOIN quick_draft_jobs j ON j.job_id=r.job_id
+                WHERE r.id=? AND j.draft_id=?""",
+                (source_result_id,parent)).fetchone()
+        if source is None:
+            return jsonify(error="Source image is no longer linked to this draft"),404
+        spec["rerun_source_result_id"]=source_result_id
     # Archive once even when the user clicks Generate without pressing Save.
+    created_fork=False
     with connection() as db:
         parent_id=data.get("_fork_from")
         if parent_id is not None:
@@ -676,6 +724,8 @@ def create_quick_generation(data):
                 VALUES(?,?,?,?,?,?)""",
                 (prompt,negative_prompt,title,original["prompt_ru"],
                  original["negative_prompt_ru"],parent_id)).lastrowid
+            created_fork=True
+            spec["rerun_source_draft_id"]=parent_id
         else:
             saved=db.execute("""SELECT id FROM quick_draft_history
                 WHERE prompt=? AND negative_prompt=? AND archived=0
@@ -685,7 +735,19 @@ def create_quick_generation(data):
     try:
         job_id = submit_job(spec)
     except (RuntimeError, FileNotFoundError, OSError) as error:
-        return jsonify(error=str(error)), 422
+        # If a competing browser started the GPU first, do not leave
+        # a phantom rerender draft in SQLite.
+        if created_fork:
+            with connection() as db:
+                db.execute("""DELETE FROM quick_draft_history
+                    WHERE id=? AND NOT EXISTS (
+                    SELECT 1 FROM quick_draft_jobs WHERE draft_id=?)""",
+                    (draft_id,draft_id))
+        active=current_job()
+        return jsonify(error=("GPU занят текущей генерацией. Новое задание не поставлено в очередь."
+                              if active is not None else str(error)),
+                       active_job_id=active.get("job_id") if active else None),(
+                       409 if active is not None else 422)
     with connection() as db:
         draft_catalog.link_job(db,draft_id,job_id)
     return jsonify(job_id=job_id, draft_id=draft_id, submitted=True,
@@ -755,6 +817,10 @@ def job_image(job_id,variant):
 @app.post("/api/quick/catalog/<int:draft_id>/regenerate")
 def regenerate_saved_draft(draft_id):
     """Fork a version and launch one GPU variant without modifying its source."""
+    active=current_job()
+    if active is not None:
+        return jsonify(error="GPU занят. Повторная генерация не добавлена в очередь.",
+                       active_job_id=active.get("job_id")),409
     with connection() as db:
         draft=db.execute("""SELECT prompt,negative_prompt FROM quick_draft_history
             WHERE id=?""",(draft_id,)).fetchone()
@@ -785,7 +851,8 @@ def regenerate_saved_draft(draft_id):
         "width":previous.get("width",768),"height":previous.get("height",960),
         "strength":previous.get("strength",0.55),
         "lora":previous.get("lora",""),
-        "_fork_from":draft_id
+        "_fork_from":draft_id,
+        "_source_result_id":requested.get("result_id")
     }
     return create_quick_generation(payload)
 

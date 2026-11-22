@@ -78,12 +78,38 @@ class QuickStudioLayoutTests(unittest.TestCase):
         self.assertIn("result-image-index",self.results)
 
     def test_sketch_buttons_preserve_existing_result_actions(self):
-        self.assertIn("()=>regenerate(item.draft_id)",self.results)
+        self.assertIn("()=>regenerate(item.draft_id,'random',item.index)",self.results)
         self.assertIn("deleteResult(item,remove)",self.results)
         self.assertIn("opening(item.job_id,item.variant)",self.results)
         self.assertIn("draftsman:catalog-open",self.results)
         self.assertIn("'/api/quick/catalog/'+item.draft_id+'/archive'",self.results)
         self.assertIn("remove.disabled=Boolean(item.archived)",self.results)
+
+    def test_rerender_stays_on_results_with_bubbles_and_progress(self):
+        self.assertIn("const gpu={busy:false,starting:false",self.results)
+        self.assertIn("function makeBubbleOverlay(frame)",self.results)
+        self.assertIn("result-rerender-overlay",self.results)
+        self.assertIn("result-rerender-water",self.results)
+        self.assertIn("for(let i=0;i<26;i++)",self.results)
+        self.assertIn("'/api/quick/catalog/'+draftId+'/regenerate'",self.results)
+        self.assertIn("stayOnResults:true",self.results)
+        self.assertIn("if(!event.detail?.stayOnResults)switchMode('quick')",self.html)
+        self.assertIn("result-rerender-progress",self.html)
+        self.assertIn("result-rerender-label",self.html)
+        self.assertIn("result-card-feedback",self.html)
+
+    def test_single_gpu_busy_state_disables_all_start_buttons(self):
+        self.assertIn("'/api/jobs/active'",self.results)
+        self.assertIn("gpu.busy||gpu.starting",self.results)
+        self.assertIn("rerun.disabled=blocked",self.results)
+        self.assertIn("setInterval(()=>{if(!document.hidden)syncGpu()},4000)",self.results)
+        self.assertIn("draftsman:gpu-state",self.results)
+        self.assertIn("document.addEventListener('draftsman:gpu-state'",self.html)
+        self.assertIn("renderBusyServer||activeRendering||generationLaunching",self.html)
+        self.assertIn("if(renderBusyServer||generationLaunching||activeRendering)",self.html)
+        self.assertIn("setRenderControlsBusy(busy)",self.html)
+        self.assertIn("id=\"resultsBusyBanner\"",self.html)
+        self.assertNotIn("E('quickTab').click();\n  document.dispatchEvent(new CustomEvent('draftsman:job-started'",self.results)
 
     def test_no_extra_gpu_or_services_for_ui(self):
         for file in (self.translation,self.results):

@@ -422,6 +422,77 @@ class QuickModeTests(unittest.TestCase):
         self.assertTrue((folder/"images"/"000_00_v01_master.png").exists())
         self.assertEqual(json.loads((folder/"state.json").read_text()),old_state)
 
+    def test_busy_gpu_rejects_rerender_without_creating_draft_or_job(self):
+        source=self.client.put("/api/quick/draft/saved",json={
+            "prompt":"A kitten","negative_prompt":"blurry"}).get_json()["draft_id"]
+        busy={"job_id":"e"*32,"status":"running","progress":25}
+        with patch.object(studio_app,"current_job",return_value=busy),patch.object(
+                studio_app,"submit_job") as submit:
+            result=self.client.post("/api/quick/catalog/"+str(source)+"/regenerate",
+               json={"seed_mode":"random"})
+            quick=self.client.post("/api/quick/generate",json={"prompt":"Another kitten"})
+        self.assertEqual(result.status_code,409)
+        self.assertEqual(quick.status_code,409)
+        submit.assert_not_called()
+        with sqlite3.connect(self.db_path) as db:
+            rows=db.execute("SELECT id FROM quick_draft_history").fetchall()
+            self.assertEqual(len(rows),1)
+            self.assertEqual(rows[0][0],source)
+
+    def test_rerender_start_failure_rolls_back_new_draft(self):
+        source=self.client.put("/api/quick/draft/saved",json={
+            "prompt":"Orange kitten","negative_prompt":""}).get_json()["draft_id"]
+        with patch.object(studio_app,"current_job",return_value=None),patch.object(
+                studio_app,"submit_job",side_effect=RuntimeError("Missing model")):
+            response=self.client.post("/api/quick/catalog/"+str(source)+"/regenerate",
+               json={"seed_mode":"random"})
+        self.assertEqual(response.status_code,422)
+        with sqlite3.connect(self.db_path) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM quick_draft_history").fetchone()[0],1)
+
+    def test_rerender_card_index_is_preserved_in_worker_spec(self):
+        draft=self.client.put("/api/quick/draft/saved",json={
+            "prompt":"Kitten wearing red glasses","negative_prompt":"blur"}).get_json()["draft_id"]
+        old_id="f"*32
+        with sqlite3.connect(self.db_path) as db:
+            db.execute("INSERT INTO quick_draft_jobs(draft_id,job_id) VALUES(?,?)",(draft,old_id))
+            db.execute("INSERT INTO quick_result_index(job_id,variant) VALUES(?,1)",(old_id,))
+            result_index=db.execute("SELECT id FROM quick_result_index WHERE job_id=?",
+                                   (old_id,)).fetchone()[0]
+        new_id="c"*32
+        with patch.object(studio_app,"current_job",return_value=None),patch.object(
+                studio_app,"submit_job",return_value=new_id) as submission:
+            response=self.client.post("/api/quick/catalog/"+str(draft)+"/regenerate",
+                json={"result_id":result_index,"seed_mode":"random"})
+        self.assertEqual(response.status_code,202,response.get_json())
+        spec=submission.call_args[0][0]
+        self.assertEqual(spec["rerun_source_result_id"],result_index)
+        self.assertEqual(spec["rerun_source_draft_id"],draft)
+        self.assertEqual(spec["variants"],1)
+        self.assertEqual(spec["draft_id"],response.get_json()["draft_id"])
+        self.assertNotEqual(spec["draft_id"],draft)
+
+    def test_active_status_reads_rerender_source_from_job_spec(self):
+        jid="b"*32
+        folder=Path(self.temp.name)/"jobs"/jid
+        folder.mkdir(parents=True)
+        (folder/"spec.json").write_text(json.dumps({
+           "rerun_source_result_id":23,"rerun_source_draft_id":4
+        }),encoding="utf-8")
+        active={"job_id":jid,"status":"running","stage":"Шаг 5 / 28",
+                "progress":17,"completed":0,"total":1}
+        with patch.object(studio_app,"DATA",Path(self.temp.name)),patch.object(
+                studio_app,"current_job",return_value=active):
+            response=self.client.get("/api/jobs/active")
+        self.assertEqual(response.status_code,200)
+        result=response.get_json()
+        self.assertTrue(result["active"])
+        self.assertEqual(result["rerun_source_result_id"],23)
+        self.assertEqual(result["rerun_source_draft_id"],4)
+        self.assertEqual(result["progress"],17)
+        with patch.object(studio_app,"current_job",return_value=None):
+            self.assertFalse(self.client.get("/api/jobs/active").get_json()["active"])
+
     def test_empty_prompt_never_starts_gpu(self):
         r=self.client.post("/api/quick/generate",json={"prompt":""})
         self.assertEqual(r.status_code,400)

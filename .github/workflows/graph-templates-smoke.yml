@@ -1,0 +1,36 @@
+name: Graph templates smoke tests
+on:
+  push:
+    branches: ["feat/sqlite-typed-graph-templates-20261122"]
+  workflow_dispatch:
+jobs:
+  templates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install lightweight UI dependencies
+        run: python -m pip install 'flask>=3.1,<4' 'pillow>=11,<13' 'requests>=2.32,<3' 'psutil>=6,<8' 'huggingface_hub>=0.35,<2'
+      - name: Compile Python
+        run: python -m compileall -q app.py studio tests
+      - name: Test typed graph templates and legacy projects
+        run: python -m unittest -v tests.test_graph_templates tests.test_projects
+      - name: Check application startup and seeded database
+        env:
+          DRAFTSMAN_DATA: ${{ runner.temp }}/draftsman-graph-data
+        run: |
+          python - <<'PY'
+          import sqlite3
+          from app import app,DATA,DB
+          with app.test_client() as c:
+              assert c.get('/').status_code==200
+              data=c.get('/api/studio/templates')
+              assert data.status_code==200, data.data[:500]
+              assert len(data.get_json()['templates'])==7
+              print('Main app: 200; graph templates:',len(data.get_json()['templates']))
+          with sqlite3.connect(DB) as db:
+              assert db.execute('select count(*) from studio_graph_templates').fetchone()[0]==7
+          PY

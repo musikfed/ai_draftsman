@@ -52,7 +52,11 @@ class QuickStudioLayoutTests(unittest.TestCase):
         self.assertNotIn("api(",quick)
         self.assertNotIn("loadProjects(",quick)
         self.assertNotIn("switchMode('graph')",quick)
-        for element in ("quickPrompt","quickNegative","reference","referenceFile","lora"):
+        # The two textareas share one loop; other controls are explicit.
+        for element in ("quickPrompt","quickNegative"):
+            self.assertIn("'"+element+"'",quick)
+        self.assertIn("$(id).value=''",quick)
+        for element in ("reference","referenceFile","lora"):
             self.assertIn("$('"+element+"')",quick)
         self.assertIn("rememberSetting(id)",quick)
         self.assertIn("new Event('input'",quick)

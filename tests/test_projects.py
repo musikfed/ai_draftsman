@@ -57,6 +57,31 @@ class GraphStudioTests(unittest.TestCase):
         self.assertEqual(len(self.client.get(path).get_json()["nodes"]),2)
         self.assertEqual(self.client.post(path+"/nodes/"+str(b)+"/generate",json={}).status_code,409)
 
+    def test_new_empty_project_does_not_copy_current_project_or_prompts(self):
+        original=self.post("/api/studio/projects",{
+            "name":"Existing comic","template":"comic_storyboard"
+        })
+        self.assertEqual(original.status_code,201)
+        source_id=original.get_json()["project_id"]
+        src=self.client.get("/api/studio/projects/"+str(source_id)).get_json()
+        self.assertGreater(len(src["nodes"]),0)
+        created=self.post("/api/studio/projects",{
+            "name":"Fresh clean project","template":"blank"
+        })
+        self.assertEqual(created.status_code,201)
+        pid=created.get_json()["project_id"]
+        self.assertNotEqual(pid,source_id)
+        new=self.client.get("/api/studio/projects/"+str(pid)).get_json()
+        self.assertEqual(new["project"]["name"],"Fresh clean project")
+        self.assertEqual(new["project"]["kind"],"general")
+        for field in ("base_prompt","negative_prompt","system_prompt","description"):
+            self.assertEqual(new["project"][field],"")
+        self.assertEqual(new["nodes"],[])
+        self.assertEqual(new["edges"],[])
+        still=self.client.get("/api/studio/projects/"+str(source_id)).get_json()
+        self.assertEqual(len(still["nodes"]),len(src["nodes"]))
+        self.assertEqual(len(still["edges"]),len(src["edges"]))
+
     def test_karate_is_optional_legacy_template(self):
         general = self.post("/api/studio/projects",{"name":"Generic","template":"blank"}).get_json()["project_id"]
         self.assertEqual(self.client.get("/api/studio/projects/"+str(general)).get_json()["nodes"],[])

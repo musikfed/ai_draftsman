@@ -80,31 +80,52 @@ function button(text,click){
  const b=make('button',text);b.type='button';b.onclick=click;return b;
 }
 function box(item){
- const card=make('div','','result-card'+(item.archived?' archived':''));
- const img=document.createElement('img');
- img.src=item.image_url;img.alt='Результат R-'+String(item.index).padStart(6,'0');
- img.loading='lazy';
- card.append(img);
- card.append(make('strong','R-'+String(item.index).padStart(6,'0')+' · '+item.title));
- const when=item.created_at?new Date(item.created_at*1000).toLocaleString('ru-RU'):'время неизвестно';
- card.append(make('div',when+' · '+(item.rating?item.rating+' ★':'без оценки')+
-    (item.archived?' · АРХИВ / только чтение':''),'result-sub'));
- card.append(make('div','Черновик #'+item.draft_id+
-  ' · вариант '+item.variant+' · Seed '+(item.seed??'—'),'result-sub'));
- const actions=make('div','','result-actions');
- actions.append(button('Открыть',()=>opening(item.job_id,item.variant)));
- actions.append(button('Черновик',()=>{
-  E('quickTab').click();
-  document.dispatchEvent(new CustomEvent('draftsman:catalog-open',{detail:{draft_id:item.draft_id}}));
- }));
+ // Sketch layout: action bar / large portrait preview / three-button footer.
+ // No duplicated thumbnails: the existing job PNG is displayed directly.
+ const label='R-'+String(item.index).padStart(6,'0');
+ const card=make('article','','result-card'+(item.archived?' archived':''));
+ card.setAttribute('aria-label',label+' · '+item.title);
+
+ const top=make('div','','result-card-top');
+ const rerun=button('Сгенерировать снова',()=>regenerate(item.draft_id));
+ rerun.className='result-regenerate';
+ rerun.title='Новая версия черновика #'+item.draft_id+' с новым Seed';
  const remove=button('Удалить',()=>deleteResult(item,remove));
  remove.className='delete-result';
  remove.title=item.archived?'Архив только для чтения — сначала разархивируй':
-  'Безвозвратно удалить этот вариант и его запись из SQLite';
+  'Безвозвратно удалить этот вариант, его PNG и запись в SQLite';
  remove.disabled=Boolean(item.archived);
- actions.append(remove);
- actions.append(button('Перегенерировать',()=>regenerate(item.draft_id)));
- actions.append(button(item.archived?'Вернуть из архива':'В архив',async()=>{
+ top.append(rerun,remove);
+
+ const frame=make('div','','result-image-frame');
+ frame.title=label+' · '+item.title+
+  ' · черновик #'+item.draft_id+' · Seed '+(item.seed??'—');
+ const img=document.createElement('img');
+ img.src=item.image_url;
+ img.alt=item.title+' ('+label+')';
+ img.loading='lazy';
+ img.decoding='async';
+ frame.append(img);
+ const index=make('span',label,'result-image-index');
+ frame.append(index);
+ if(item.rating){
+  frame.append(make('span','★ '+item.rating+'/5','result-image-rating'));
+ }
+ if(item.archived){
+  frame.append(make('span','АРХИВ','result-image-archived'));
+ }
+
+ const bottom=make('div','','result-card-bottom');
+ const open=button('Открыть',()=>opening(item.job_id,item.variant));
+ open.title='Открыть оригинал '+label+' в быстром режиме';
+ const prompt=button('Промпт',()=>{
+  E('quickTab').click();
+  document.dispatchEvent(new CustomEvent('draftsman:catalog-open',{
+   detail:{draft_id:item.draft_id}
+  }));
+ });
+ prompt.title='Открыть сохранённый промпт и настройки черновика #'+item.draft_id;
+ const archive=button(item.archived?'Вернуть':'В архив',async()=>{
   if(!confirm((item.archived?'Разархивировать':'Зафиксировать только для чтения')+
     ' черновик #'+item.draft_id+'?'))return;
   try{
@@ -112,8 +133,12 @@ function box(item){
     {archived:!item.archived});
    await loadResults(false);await loadShelf();
   }catch(e){note('Ошибка архива: '+e.message)}
- }));
- card.append(actions);return card;
+ });
+ archive.title=item.archived?'Вернуть черновик из архива':
+  'Защитить черновик и его результаты от изменений';
+ bottom.append(open,prompt,archive);
+ card.append(top,frame,bottom);
+ return card;
 }
 async function loadResults(reset=false){
  if(reset)state.page=1;

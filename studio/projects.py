@@ -15,6 +15,7 @@ from flask import jsonify, request
 from studio.jobs import submit_job, current_job
 from studio.checkpoints import CHECKPOINTS, DEFAULT_CHECKPOINT
 from studio.parameters import choose_variants, MAX_VARIANTS
+from studio.graph_templates import initialize_templates, list_templates, get_template
 
 PULL_STATE = {"status": "idle", "model": "", "message": "", "completed": 0, "total": 0}
 PULL_LOCK = threading.Lock()
@@ -65,6 +66,7 @@ def register(app, db_path: Path, data_dir: Path, ollama_url: str, default_model:
             project_id UNINDEXED, source, content
         );
         """)
+        initialize_templates(c)
 
     def fetch_project(connection, project_id):
         row = connection.execute(
@@ -145,6 +147,24 @@ def register(app, db_path: Path, data_dir: Path, ollama_url: str, default_model:
         except sqlite3.OperationalError:
             return []
 
+    @app.get("/api/studio/templates")
+    def studio_graph_template_catalog():
+        """Seven built-in, database-backed graph examples; no projects created."""
+        with db() as c:
+            result = list_templates(c)
+        return jsonify(templates=result)
+
+    @app.get("/api/studio/templates/<template_id>")
+    def studio_graph_template_preview(template_id):
+        """Return the editable example structure before project creation."""
+        if not re.fullmatch(r"[a-z][a-z0-9_]{2,80}",template_id):
+            return jsonify(error="Invalid template ID"),400
+        with db() as c:
+            definition=get_template(c,template_id)
+        if not definition:
+            return jsonify(error="Unknown graph template"),404
+        return jsonify(template=definition)
+
     @app.get("/api/studio/projects")
     def studio_projects():
         with db() as c:
@@ -160,12 +180,25 @@ def register(app, db_path: Path, data_dir: Path, ollama_url: str, default_model:
         payload = request.get_json(silent=True) or {}
         name = str(payload.get("name", "Новый проект")).strip()[:100]
         template = str(payload.get("template", "blank"))
-        if not name or template not in ("blank", "karate"):
-            return jsonify(error="Invalid project name/template"), 400
+        if not name:
+            return jsonify(error="Invalid project name"), 400
+        blueprint = None
+        if template not in ("blank","karate"):
+            if not re.fullmatch(r"[a-z][a-z0-9_]{2,80}",template):
+                return jsonify(error="Invalid project template"),400
+            with db() as c:
+                blueprint = get_template(c,template)
+            if blueprint is None:
+                return jsonify(error="Unknown graph template"),400
         description = str(payload.get("description", ""))[:5000]
         style = ""
         system = ""
         negative = ""
+        if blueprint is not None:
+            description = description or blueprint["summary_ru"]
+            style = blueprint["base_prompt"]
+            negative = blueprint["negative_prompt"]
+            system = blueprint["system_prompt"]
         if template == "karate":
             description = description or ("Educational comedy manga series, 24 lessons about Linux, "
                                           "Docker and PostgreSQL; five sequential slides per lesson.")
@@ -183,10 +216,28 @@ def register(app, db_path: Path, data_dir: Path, ollama_url: str, default_model:
             cur = c.execute(
                 "INSERT INTO studio_projects(name,description,kind,llm_model,"
                 "base_prompt,negative_prompt,system_prompt) VALUES(?,?,?,?,?,?,?)",
-                (name, description, "karate" if template == "karate" else "general",
+                (name, description, "karate" if template == "karate" else
+                 (template if blueprint is not None else "general"),
                  default_model, style, negative, system)
             )
             pid = cur.lastrowid
+            if blueprint is not None:
+                node_ids = {}
+                for item in blueprint["nodes"]:
+                    created = c.execute(
+                        "INSERT INTO studio_nodes "
+                        "(project_id,title,kind,notes,prompt,negative_prompt,status,x,y) "
+                        "VALUES(?,?,?,?,?,?,'draft',?,?)",
+                        (pid,item["title"],item["kind"],item["notes"],
+                         item["prompt"],item.get("negative_prompt",""),
+                         item["x"],item["y"])
+                    )
+                    node_ids[item["key"]] = created.lastrowid
+                for source, target in blueprint["edges"]:
+                    c.execute(
+                        "INSERT INTO studio_edges(project_id,source,target) VALUES(?,?,?)",
+                        (pid,node_ids[source],node_ids[target])
+                    )
             if template == "karate":
                 ids = []
                 for index, entry in enumerate(canon):

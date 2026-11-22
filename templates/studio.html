@@ -1332,7 +1332,7 @@ $('generate').onclick=()=>task(async()=>{
   say('Генерация запущена на RTX 3060 · ожидание показано в карточках');
  }finally{
   generationLaunching=false;
-  setRenderControlsBusy(renderBusyServer||activeRendering);
+  setRenderControlsBusy(activeRendering);
  }
 });
 document.addEventListener('draftsman:open-result',event=>{

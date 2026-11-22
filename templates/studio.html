@@ -197,6 +197,10 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
  .result-card-top{grid-template-columns:minmax(0,1fr) minmax(86px,.4fr)}
  .result-card-top button,.result-card-bottom button{font-size:12px;padding:8px 5px}
 }
+.quick-project-start{justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px}
+.quick-project-start h2{margin:0;flex:1 1 240px}
+.quick-project-start button{min-height:42px;font-weight:700}
+@media(max-width:560px){.quick-project-start button{width:100%}}
 #quickSection textarea{min-height:115px}
 .wait-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:10px 0}
 .wait-grid.single{grid-template-columns:minmax(0,1fr)}
@@ -264,8 +268,11 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
 <div class="cols" id="workArea">
  <section id="projectColumn">
   <div id="quickSection" class="panel collapsed">
-   <h2>Быстрая генерация без проекта</h2>
-   <p class="muted">Описывай любую картинку. Граф, узлы и утверждение не нужны. По образцу — выбери img2img справа.</p>
+   <div class="toolbar quick-project-start">
+    <h2>Быстрая генерация без проекта</h2>
+    <button id="quickCreateBlankProject" type="button" class="primary" title="Создать отдельный пустой проект. Текущий промпт и результаты не копируются.">+ Новый проект с нуля</button>
+   </div>
+   <p class="muted">Описывай любую картинку. Граф, узлы и утверждение не нужны. По образцу — выбери img2img справа. Кнопка «Новый проект с нуля» создаёт чистый отдельный проект.</p>
    <div class="quick-shelf">
     <div class="quick-shelf-header">
      <div class="quick-shelf-heading"><strong>Последние эскизы</strong><span class="muted">8 на странице · оригинальные PNG</span></div>
@@ -294,6 +301,7 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
     <button id="quickDraftAI">ИИ: улучшить промпт</button>
     <button id="saveQuick" class="primary">Сохранить черновик</button>
    </div>
+   <p id="quickTranslationStatus" class="muted" role="status" aria-live="polite">Нажми «Сохранить черновик»: Qwen переведёт оба промпта на русский, покажет справа и сохранит в SQLite вместе с оригиналами. При занятом GPU перевод выполнится после освобождения.</p>
    <p class="muted">Каждый новый текст сохраняется отдельной версией в SQLite. Ищи их ниже в каталоге.</p>
    <details id="draftHistoryPanel" style="display:none" aria-hidden="true">
     <summary>Библиотека черновиков · сохранённые версии и перевод на русский</summary>
@@ -363,7 +371,7 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
     <div id="graphTemplateNodeLegend" class="graph-template-legend"></div>
     <p id="graphTemplateNote" class="muted">Связи — контекст, не автоматическое выполнение. Узел «Референс» описывает образец; реальное фото для img2img выбирается отдельно.</p>
    </details>
-   <details><summary data-t="projectSettings">Настройки проекта и общие промпты</summary>
+   <details id="projectSettingsPanel"><summary data-t="projectSettings">Настройки проекта и общие промпты</summary>
     <label data-t="projectName">Название</label><input id="projectName" maxlength="100">
     <label data-t="projectBrief">Что создаём? Описание, цели и ограничения</label><textarea id="projectBrief"></textarea>
     <label data-t="globalPositive">Общий положительный промпт: стиль и правила всех рисунков</label><textarea id="basePrompt"></textarea>
@@ -841,11 +849,24 @@ $('powerOff').onclick=()=>task(async()=>{
 });
 $('freeVram').onclick=()=>task(async()=>{const r=await api('/api/gpu/free','POST',{});say(JSON.stringify(r))});
 $('projectSelect').onchange=()=>task(()=>loadProject(Number($('projectSelect').value)));
-$('addProject').onclick=()=>task(async()=>{
- const name=prompt('Название нового проекта','Мой проект');if(!name||!name.trim())return;
- const r=await api('/api/studio/projects','POST',{name:name.trim(),template:'blank'});
- await loadProjects(r.project_id);say('Новый универсальный проект создан');
-});
+async function createBlankProject(){
+ const title=lang==='en'?'New empty project name':'Название нового чистого проекта';
+ const proposed=lang==='en'?'New project':'Новый проект';
+ const name=prompt(title,proposed);
+ if(!name||!name.trim())return;
+ // Always use the true blank template: never copy the active quick prompt,
+ // draft, reference, uploaded image, graph nodes or selected project.
+ const result=await api('/api/studio/projects','POST',
+  {name:name.trim(),template:'blank'});
+ await loadProjects(result.project_id);
+ switchMode('graph');
+ $('projectSettingsPanel').open=true;
+ $('projectName').focus();
+ say('Создан чистый проект #'+result.project_id+
+  '. Исходные промпты и результаты быстрого режима не изменены.');
+}
+$('addProject').onclick=()=>task(createBlankProject);
+$('quickCreateBlankProject').onclick=()=>task(createBlankProject);
 $('karateTemplate').onclick=()=>task(async()=>{
  if(!confirm('Импортировать Karate Linux как отдельный проект? Старые слайды в базе сохранятся.'))return;
  const r=await api('/api/studio/projects','POST',{name:'Karate Linux',template:'karate'});
@@ -1162,7 +1183,7 @@ $('saveQuick').onclick=()=>task(async()=>{
  const d=await api('/api/quick/draft/saved','PUT',
   {prompt:$('quickPrompt').value,negative_prompt:$('quickNegative').value,auto_translate:true});
  await refreshDraftLibrary(d.draft_id);
- document.dispatchEvent(new CustomEvent('draftsman:draft-saved',{detail:{draft_id:d.draft_id}}));
+ document.dispatchEvent(new CustomEvent('draftsman:draft-saved',{detail:{draft_id:d.draft_id,translation_status:d.translation_status}}));
  say('Черновик #'+d.draft_id+' сохранён в SQLite');
 });
 $('quickDraftAI').onclick=()=>task(async()=>{
@@ -1174,7 +1195,7 @@ $('quickDraftAI').onclick=()=>task(async()=>{
  const d=await api('/api/quick/draft/saved','PUT',
   {prompt:result.prompt,negative_prompt:result.negative_prompt||'',auto_translate:true});
  await refreshDraftLibrary(d.draft_id);
- document.dispatchEvent(new CustomEvent('draftsman:draft-saved',{detail:{draft_id:d.draft_id}}));
+ document.dispatchEvent(new CustomEvent('draftsman:draft-saved',{detail:{draft_id:d.draft_id,translation_status:d.translation_status}}));
  say('Промпт подготовлен и сохранён — проверь перед генерацией');
 });
 function renderWaiting(total,completed=0){
@@ -1320,7 +1341,7 @@ $('generate').onclick=()=>task(async()=>{
      ', хотя положительный их запрашивает. Продолжить генерацию несмотря на противоречие?'))return;
     const d=await api('/api/quick/draft/saved','PUT',{prompt,negative_prompt});
     await refreshDraftLibrary(d.draft_id);
-    document.dispatchEvent(new CustomEvent('draftsman:draft-saved',{detail:{draft_id:d.draft_id}}));
+    document.dispatchEvent(new CustomEvent('draftsman:draft-saved',{detail:{draft_id:d.draft_id,translation_status:d.translation_status}}));
     response=await api('/api/quick/generate','POST',{...settings,prompt,negative_prompt});
   }else{
     if(!project||!chosen)throw Error('Выбери узел графа или переключись в быстрый режим');

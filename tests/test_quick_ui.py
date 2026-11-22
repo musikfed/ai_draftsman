@@ -30,9 +30,36 @@ class QuickStudioLayoutTests(unittest.TestCase):
         self.assertIn("draftsman:draft-restored",self.translation)
         self.assertIn("d.prompt===current().prompt",self.translation)
         self.assertIn("d.negative_prompt===current().negative_prompt",self.translation)
-        self.assertNotIn("method:'POST'",self.translation)
-        self.assertNotIn("method: 'POST'",self.translation)
+        self.assertIn("if(draft.prompt_ru!==null && draft.negative_prompt_ru!==null)",self.translation)
+        self.assertIn("requestMissingTranslation(id,serial)",self.translation)
+        self.assertIn("if(active.active)",self.translation)
+        self.assertIn("{method:'POST'}",self.translation)
+        self.assertIn("state.nextAttempt",self.translation)
+        self.assertIn("d.prompt===current().prompt",self.translation)
+        self.assertIn("quickTranslationStatus",self.translation)
         self.assertIn('result["draft_id"]=',self.app)
+
+    def test_blank_project_button_visible_and_uses_existing_project_api(self):
+        self.assertIn('id="quickCreateBlankProject"',self.html)
+        self.assertIn('id="projectSettingsPanel"',self.html)
+        self.assertIn('async function createBlankProject()',self.html)
+        self.assertIn("template:'blank'",self.html)
+        self.assertIn("switchMode('graph')",self.html)
+        self.assertIn("$('projectSettingsPanel').open=true",self.html)
+        self.assertIn("$('quickCreateBlankProject').onclick=()=>task(createBlankProject)",self.html)
+        self.assertIn("$('addProject').onclick=()=>task(createBlankProject)",self.html)
+        self.assertIn('id="quickTranslationStatus"',self.html)
+        self.assertIn('translation_status:d.translation_status',self.html)
+
+    def test_translation_deferred_until_gpu_finishes_and_is_read_only(self):
+        self.assertIn("'/api/jobs/active'",self.translation)
+        self.assertIn("state.serverStatus='deferred'",self.translation)
+        self.assertIn("draftsman:job-completed",self.translation)
+        self.assertIn("retry_later",self.translation)
+        self.assertIn("document.hidden",self.translation)
+        self.assertIn("same(draft)",self.translation)
+        self.assertIn("Перевод готов:",self.translation)
+        self.assertNotIn("'/api/chat'",self.translation)
 
     def test_shelf_has_selected_items_arrows_and_eight_per_page(self):
         for field in ("quickShelfGrid","quickShelfPrev","quickShelfNext","quickShelfStatus"):

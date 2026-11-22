@@ -1,0 +1,41 @@
+name: UI and blank project smoke tests
+
+on:
+  push:
+    branches:
+      - fix/new-clean-project-and-auto-ru-20261122
+      - main
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-ui-and-flask:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install lightweight server and test requirements
+        run: python -m pip install 'flask>=3.1,<4' 'pillow>=11,<13' 'requests>=2.32,<3' 'psutil>=6,<8' 'huggingface_hub>=0.35,<2'
+      - name: Compile all Python modules
+        run: python -m compileall -q app.py studio tests
+      - name: Run isolated unit tests
+        env:
+          DRAFTSMAN_DATA: ${{ runner.temp }}/draftsman-test-data
+        run: python -m unittest discover -s tests -v
+      - name: Import Flask and check home page
+        env:
+          DRAFTSMAN_DATA: ${{ runner.temp }}/draftsman-main-data
+        run: |
+          python - <<'PY'
+          from app import app
+          with app.test_client() as client:
+              for path in ('/', '/api/studio/projects', '/api/studio/templates',
+                           '/api/quick/draft/saved'):
+                  response=client.get(path)
+                  print(path, response.status_code)
+                  assert response.status_code == 200
+          PY

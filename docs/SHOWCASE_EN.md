@@ -2,6 +2,26 @@
 
 These screenshots were supplied by the project author on **22 November 2026**, showing the application on a local NVIDIA RTX 3060 12 GB. These are **real application captures, not UI mockups**. The WebP files in GitHub are lightweight previews of the originals.
 
+## Additional authentic screenshots · 22 November 2026
+
+These four screenshots were provided by the project author and compressed to small WebP previews. They are not newly designed mockups. Some captures show temporary HTTP 503 translation/monitoring errors; these were not concealed.
+
+### Quick image generation and bilingual prompts
+![Quick image generation, SDXL settings and recent outputs](screenshots/quick-generation-20261122.webp)
+
+### Saved draft catalogue with translations and ratings
+![Prompt versions, RU translations and linked images](screenshots/draft-catalog-20261122.webp)
+
+### Independent project and graph workspace
+![Node graph editor and project-specific parameters](screenshots/project-workspace-20261122.webp)
+
+### Large result cards and rerender actions
+![Real gallery showing the cat-samurai experiment](screenshots/result-cards-20261122.webp)
+
+[Multilingual public project gallery](https://musikfed.github.io/view_my_prj/projects/ai_draftsman/).
+
+---
+
 ## Rerender progress inside a result card
 
 ![Rerender in-place with 60% GPU progress](screenshots/rerender-progress.webp)

@@ -1,10 +1,10 @@
 # AI Draftsman — real interface screenshots
 
-These screenshots were supplied by the project author on **22 November 2026**, showing the application on a local NVIDIA RTX 3060 12 GB. These are **real application captures, not UI mockups**. The WebP files in GitHub are lightweight previews of the originals.
+These screenshots were supplied by the project author on **22 November 2026**, showing the application on a local NVIDIA RTX 3060 12 GB. These are **real application captures, not UI mockups**. The GitHub images are now crisp WebP captures up to 2048 px wide (94–240 KB each), replacing the blurry 2–5 KB thumbnails.
 
 ## Additional authentic screenshots · 22 November 2026
 
-These four screenshots were provided by the project author and compressed to small WebP previews. They are not newly designed mockups. Some captures show temporary HTTP 503 translation/monitoring errors; these were not concealed.
+These seven screenshots were provided by the project author and compressed to small WebP previews. They are not newly designed mockups. Some captures show temporary HTTP 503 translation/monitoring errors; these were not concealed.
 
 ### Quick image generation and bilingual prompts
 ![Quick image generation, SDXL settings and recent outputs](screenshots/quick-generation-20261122.webp)
@@ -17,6 +17,15 @@ These four screenshots were provided by the project author and compressed to sma
 
 ### Large result cards and rerender actions
 ![Real gallery showing the cat-samurai experiment](screenshots/result-cards-20261122.webp)
+
+### Results workspace, larger view
+![Real image results workspace in full width](screenshots/results-closer-20261122.webp)
+
+### Larger result cards and buttons
+![Actual card image details and readable controls](screenshots/cards-closer-20261122.webp)
+
+### Project graph, larger view
+![Original graph editor screenshot at higher resolution](screenshots/graph-closer-20261122.webp)
 
 [Multilingual public project gallery](https://musikfed.github.io/view_my_prj/projects/ai_draftsman/).
 

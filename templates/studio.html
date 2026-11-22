@@ -474,7 +474,7 @@ let busy=false;
 let renderBusyServer=false, generationLaunching=false;
 function setRenderControlsBusy(serverBusy){
  renderBusyServer=Boolean(serverBusy);
- const locked=renderBusyServer||generationLaunching;
+ const locked=renderBusyServer||activeRendering||generationLaunching;
  $('generate').disabled=locked;
  $('generate').title=locked?'GPU занят: генерация только по одной, без очереди':'Запустить одно задание';
  $('quickDraftAI').disabled=locked;

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru"><head><link rel="stylesheet" href="/static/css/draft_catalog.css"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="ru"><head><link rel="stylesheet" href="/static/css/draft_catalog.css"><link rel="stylesheet" href="/static/css/graph_template_library.css"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PEGINELAB AI Draftsman — Studio</title>
 <style>
 :root{color-scheme:dark;--bg:#0a1120;--pane:#152137;--field:#0c1728;--line:#34465f;--orange:#ef912c;--text:#eaf0f8;--muted:#a0b3cd;--green:#6bd2a1}
@@ -353,6 +353,16 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
     <button id="karateTemplate" data-t="karateTemplate">Шаблон Karate Linux</button>
     <button id="deleteProject" class="danger" data-t="deleteProject">Удалить проект</button>
    </div>
+   <details id="graphTemplatesPanel" class="graph-template-library">
+    <summary>📚 Библиотека графов · 7 готовых схем</summary>
+    <p class="muted" id="graphTemplateHelp">Выбери схему, посмотри структуру узлов и создай независимую копию проекта из SQLite.</p>
+    <div class="toolbar"><select id="graphTemplateSelect" class="grow" aria-label="Выбери тип графа"></select>
+     <button class="primary" id="createGraphTemplate">+ Создать по схеме</button></div>
+    <div id="graphTemplateDescription" class="muted" aria-live="polite"></div>
+    <div id="graphTemplateDiagram" class="graph-template-diagram" aria-label="Предпросмотр связей и узлов"></div>
+    <div id="graphTemplateNodeLegend" class="graph-template-legend"></div>
+    <p id="graphTemplateNote" class="muted">Связи — контекст, не автоматическое выполнение. Узел «Референс» описывает образец; реальное фото для img2img выбирается отдельно.</p>
+   </details>
    <details><summary data-t="projectSettings">Настройки проекта и общие промпты</summary>
     <label data-t="projectName">Название</label><input id="projectName" maxlength="100">
     <label data-t="projectBrief">Что создаём? Описание, цели и ограничения</label><textarea id="projectBrief"></textarea>
@@ -1404,4 +1414,4 @@ restorePageSettings();
 translate();
 startup().catch(e=>say(e.message));
 
-</script><script src="/static/js/draft_catalog.js"></script><script src="/static/js/results_catalog.js"></script><script src="/static/js/quick_translations.js"></script></body></html>
+</script><script src="/static/js/draft_catalog.js"></script><script src="/static/js/results_catalog.js"></script><script src="/static/js/quick_translations.js"></script><script src="/static/js/graph_template_library.js"></script></body></html>

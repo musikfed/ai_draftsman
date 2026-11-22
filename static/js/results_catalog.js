@@ -33,6 +33,16 @@ function selectSketch(jobId,variant){
   item.setAttribute('aria-pressed',active?'true':'false');
  }
 }
+document.addEventListener('draftsman:new-quick-drawing',()=>{
+  // The previous thumbnail remains in history, but a fresh sketch must not
+  // visually look as though the old result belongs to the new blank prompt.
+  state.shelfSelectedKey='';
+  try{localStorage.removeItem('draftsman_selected_sketch')}catch(e){}
+  for(const item of E('quickShelfGrid').querySelectorAll('.quick-shelf-item')){
+   item.classList.remove('selected');
+   item.setAttribute('aria-pressed','false');
+  }
+});
 function opening(jobId,variant=1){
  selectSketch(jobId,variant);
  E('quickTab').click();

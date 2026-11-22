@@ -5,6 +5,10 @@ const E=id=>document.getElementById(id);
 if(!E('resultsSection'))return;
 const state={page:1,pages:1,request:0,lastRefresh:0,
  shelfPage:1,shelfPages:1,shelfRequest:0,shelfSelectedKey:''};
+const gpu={busy:false,starting:false,jobId:'',resultId:0,
+ progress:0,stage:'',lastError:''};
+const cardMessages=new Map();
+let syncingGpu=false;
 try{state.shelfSelectedKey=localStorage.getItem('draftsman_selected_sketch')||''}catch(e){}
 const make=(tag,text='',cls='')=>{
  const node=document.createElement(tag);
@@ -34,16 +38,149 @@ function opening(jobId,variant=1){
  E('quickTab').click();
  document.dispatchEvent(new CustomEvent('draftsman:open-result',{detail:{job_id:jobId}}));
 }
-async function regenerate(draftId,seedMode='random'){
+function broadcastGpu(){
+ document.dispatchEvent(new CustomEvent('draftsman:gpu-state',{
+  detail:{busy:gpu.busy||gpu.starting,job_id:gpu.jobId}
+ }));
+ applyBusyToCards();
+}
+function cardMessage(id,message){
+ if(!id)return;
+ cardMessages.set(Number(id),String(message));
+ const card=E('resultsGrid').querySelector('.result-card[data-result-id="'+id+'"]');
+ if(card)drawCardMessage(card,Number(id));
+}
+function drawCardMessage(card,id){
+ let line=card.querySelector('.result-card-feedback');
+ const message=cardMessages.get(Number(id))||'';
+ if(!message){line?.remove();return}
+ if(!line){
+  line=make('div','','result-card-feedback');line.setAttribute('role','alert');
+  card.querySelector('.result-card-top')?.after(line);
+ }
+ line.textContent=message;
+}
+function makeBubbleOverlay(frame){
+ const overlay=make('div','','result-rerender-overlay');
+ overlay.setAttribute('role','status');
+ overlay.setAttribute('aria-label','Выполняется повторная генерация');
+ const water=make('div','','result-rerender-water');
+ const hues=[175,191,207,235,264,304,46,153];
+ for(let i=0;i<26;i++){
+  const dot=make('i','','wait-bubble');
+  const rnd=Math.random;
+  const speed=3.3+rnd()*6;
+  dot.style.setProperty('--bubble-x',(2+rnd()*94).toFixed(1)+'%');
+  dot.style.setProperty('--bubble-size',(4+rnd()*29).toFixed(1)+'px');
+  dot.style.setProperty('--bubble-hue',String(hues[Math.floor(rnd()*hues.length)]));
+  dot.style.setProperty('--bubble-drift',(rnd()*86-43).toFixed(1)+'px');
+  dot.style.setProperty('--bubble-speed',speed.toFixed(2)+'s');
+  dot.style.setProperty('--bubble-delay',(-rnd()*speed).toFixed(2)+'s');
+  dot.setAttribute('aria-hidden','true');
+  water.append(dot);
+ }
+ const label=make('div','','result-rerender-label');
+ const bar=document.createElement('progress');
+ bar.className='result-rerender-progress';bar.max=100;bar.value=0;
+ overlay.append(water,label,bar);
+ frame.append(overlay);
+ return overlay;
+}
+function applyBusyToCards(){
+ const blocked=gpu.busy||gpu.starting;
+ const banner=E('resultsBusyBanner');
+ banner.classList.toggle('collapsed',!blocked);
+ if(blocked){
+  banner.textContent='GPU занят · '+(gpu.stage||'подготовка генерации')+
+   ' · '+Math.max(0,Math.round(gpu.progress))+'% · новые генерации отключены (без очереди)';
+ }
+ for(const card of E('resultsGrid').querySelectorAll('.result-card')){
+  const rerun=card.querySelector('.result-regenerate');
+  if(rerun){rerun.disabled=blocked;rerun.title=blocked?'Дождись завершения текущей генерации':rerun.dataset.readyTitle||rerun.title}
+  const id=Number(card.dataset.resultId);
+  const frame=card.querySelector('.result-image-frame');
+  if(!frame)continue;
+  let overlay=frame.querySelector('.result-rerender-overlay');
+  if(blocked&&gpu.resultId===id){
+   if(!overlay)overlay=makeBubbleOverlay(frame);
+   overlay.querySelector('.result-rerender-label').textContent=
+    (gpu.stage||'Подготовка модели')+' · '+Math.max(0,Math.round(gpu.progress))+'%';
+   overlay.querySelector('progress').value=Number(gpu.progress)||0;
+  }else if(overlay){overlay.remove()}
+  drawCardMessage(card,id);
+ }
+}
+async function syncGpu(){
+ if(syncingGpu || document.hidden)return;
+ syncingGpu=true;
+ try{
+  const active=await api('/api/jobs/active');
+  if(active.active){
+   gpu.busy=true;gpu.starting=false;gpu.jobId=active.job_id||gpu.jobId;
+   gpu.resultId=Number(active.rerun_source_result_id)||0;
+   gpu.progress=Number(active.progress)||0;
+   gpu.stage=active.stage||'Генерация изображения';
+  }else if(!gpu.starting){
+   const wasBusy=gpu.busy,previousId=gpu.jobId,previousResult=gpu.resultId;
+   if(wasBusy&&previousId){
+    let job=null;
+    try{job=await api('/api/jobs/'+encodeURIComponent(previousId))}catch(_){}
+    if(job&&['queued','running'].includes(job.status)){
+     gpu.progress=Number(job.progress)||0;
+     gpu.stage=job.stage||'Генерация изображения';
+     broadcastGpu();return;
+    }
+    if(job&&job.status==='failed'&&previousResult){
+     cardMessage(previousResult,'Генерация не удалась: '+(job.error||'проверь журнал задания'));
+    }
+    if(job&&job.status==='completed'&&previousResult){
+     cardMessage(previousResult,'Готово! Новый вариант сохранён в результатах.');
+    }
+    state.shelfPage=1;
+    await loadResults(true);
+    await loadShelf();
+   }
+   gpu.busy=false;gpu.jobId='';gpu.resultId=0;gpu.progress=0;gpu.stage='';
+  }
+  broadcastGpu();
+ }catch(error){
+  // Network failures must never be interpreted as confirmed GPU idleness.
+  if(gpu.busy||gpu.starting){
+   gpu.stage='Проверка состояния GPU недоступна';
+   broadcastGpu();
+  }
+  note('Состояние генерации: '+error.message);
+ }finally{syncingGpu=false}
+}
+async function regenerate(draftId,seedMode='random',resultId=null){
+ if(gpu.busy||gpu.starting){
+  cardMessage(resultId,'GPU занят другой генерацией. Очередь отключена.');
+  return;
+ }
  if(!confirm('Перегенерировать черновик #'+draftId+
-  ' одним вариантом? Исходная версия и PNG останутся на диске. Будет создан новый черновик.'))return;
+  ' одним вариантом? Исходный PNG останется на диске. Новая версия появится после завершения.'))return;
+ gpu.starting=true;gpu.stage='Запуск GPU';gpu.progress=0;
+ gpu.resultId=Number(resultId)||0;
+ cardMessages.delete(gpu.resultId);
+ broadcastGpu();
  try{
   const result=await api('/api/quick/catalog/'+draftId+'/regenerate','POST',
-    {seed_mode:seedMode});
-  E('quickTab').click();
-  document.dispatchEvent(new CustomEvent('draftsman:job-started',{detail:{job_id:result.job_id}}));
-  note('Создана новая версия #'+result.draft_id+', GPU задание запущено.');
- }catch(e){note('Не удалось перегенерировать: '+e.message)}
+    {seed_mode:seedMode,result_id:resultId});
+  gpu.starting=false;gpu.busy=true;gpu.jobId=result.job_id;
+  gpu.stage='Ожидание GPU';
+  broadcastGpu();
+  // Stay on Results. Also update Quick panel's existing job tracker silently.
+  document.dispatchEvent(new CustomEvent('draftsman:job-started',
+   {detail:{job_id:result.job_id,stayOnResults:true}}));
+  note('Запущена генерация версии #'+result.draft_id+' · очередь отключена');
+  await syncGpu();
+ }catch(error){
+  gpu.starting=false;gpu.busy=false;gpu.jobId='';gpu.stage='';
+  cardMessage(resultId,'Не удалось запустить: '+error.message);
+  note('Повторная генерация: '+error.message);
+  broadcastGpu();
+  await syncGpu();
+ }
 }
 async function deleteResult(item,control){
  const title='R-'+String(item.index).padStart(6,'0');
@@ -85,11 +222,14 @@ function box(item){
  const label='R-'+String(item.index).padStart(6,'0');
  const card=make('article','','result-card'+(item.archived?' archived':''));
  card.setAttribute('aria-label',label+' · '+item.title);
+ card.dataset.resultId=String(item.index);
 
  const top=make('div','','result-card-top');
- const rerun=button('Сгенерировать снова',()=>regenerate(item.draft_id));
+ const rerun=button('Сгенерировать снова',()=>regenerate(item.draft_id,'random',item.index));
  rerun.className='result-regenerate';
  rerun.title='Новая версия черновика #'+item.draft_id+' с новым Seed';
+ rerun.dataset.readyTitle=rerun.title;
+ rerun.disabled=gpu.busy||gpu.starting;
  const remove=button('Удалить',()=>deleteResult(item,remove));
  remove.className='delete-result';
  remove.title=item.archived?'Архив только для чтения — сначала разархивируй':
@@ -153,6 +293,7 @@ async function loadResults(reset=false){
   state.pages=response.pages;
   if(state.page>state.pages){state.page=state.pages;return loadResults(false)}
   const grid=E('resultsGrid');grid.replaceChildren(...response.results.map(box));
+  applyBusyToCards();
   if(!response.results.length)grid.append(make('p',
    'Здесь появятся завершённые генерации. Историю PNG не удаляли.','catalog-empty'));
   const from=response.total?(response.page-1)*response.size+1:0;
@@ -227,9 +368,10 @@ E('resultsTab').addEventListener('click',()=>loadResults(true));
 document.addEventListener('draftsman:job-completed',()=>{
  state.shelfPage=1;loadShelf();
  if(!E('resultsSection').classList.contains('collapsed'))loadResults(true);
+ syncGpu();
 });
 document.addEventListener('visibilitychange',()=>{
- if(!document.hidden){loadShelf();
+ if(!document.hidden){loadShelf();syncGpu();
   if(!E('resultsSection').classList.contains('collapsed'))loadResults(false)}
 });
 // Only lightweight HTTP reads while the user keeps a visible studio tab open.
@@ -241,5 +383,7 @@ setInterval(()=>{
 },60000);
 loadShelf();
 if(!E('resultsSection').classList.contains('collapsed'))loadResults(true);
+syncGpu();
+setInterval(()=>{if(!document.hidden)syncGpu()},4000);
 window.DraftsmanRegenerate=regenerate;
 })();

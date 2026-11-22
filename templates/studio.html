@@ -176,6 +176,17 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
 .result-image-rating{top:10px;right:10px}
 .result-image-archived{bottom:10px;left:10px}
 .result-card.archived{opacity:.85}
+.results-busy-banner{padding:10px 14px;border:1px solid #5691ab;background:#0b354b;color:#e3f4fa;border-radius:9px;margin:9px 0}
+.result-card-feedback{border:1px solid #c87e64;border-radius:7px;background:#4b2720;color:#fff0e7;padding:9px;font-size:13px;line-height:1.4}
+.result-regenerate:disabled{opacity:.48;cursor:not-allowed}
+.result-rerender-overlay{position:absolute;inset:0;z-index:3;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:8px;padding:22px 12px 30px;background:#05223a}
+.result-rerender-water{position:absolute;inset:0;overflow:hidden;
+ background:radial-gradient(ellipse at 45% -10%,#70d6ea35,transparent 64%),
+ repeating-linear-gradient(104deg,transparent 0 45px,#e2ffff13 48px 56px,transparent 70px 118px),
+ linear-gradient(177deg,#0b6083,#0a3759 59%,#061a31)}
+.result-rerender-label{position:relative;z-index:5;border-radius:8px;background:#041b31d9;color:#e4f8ff;padding:8px 11px;font-size:clamp(12px,1.1vw,16px);text-align:center}
+.result-rerender-progress{position:relative;z-index:5;width:85%;height:13px;accent-color:#fa9e37}
+.result-rerender-water .wait-bubble{z-index:2}
 @media(max-width:860px){
  .results-grid{grid-template-columns:minmax(0,1fr);max-width:620px}
  .result-card-top button,.result-card-bottom button{font-size:14px}
@@ -329,6 +340,7 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
     <select id="resultsArchive"><option value="all">Все</option><option value="active">Активные</option><option value="archived">Архив</option></select>
     <button id="resultsRefresh">↻ Обновить</button>
    </div>
+   <div id="resultsBusyBanner" class="results-busy-banner collapsed" role="status" aria-live="polite"></div>
    <div id="resultsGrid" class="results-grid"></div>
    <div class="catalog-pager">
     <button id="resultsPrev">← Назад</button><span id="resultsPage" class="catalog-meta"></span><button id="resultsNext">Вперёд →</button>
@@ -459,6 +471,16 @@ const TR={
 let lang='ru', projects=[], project=null, nodes=[], edges=[], chosen=0, currentJob='';
 let currentMode='graph', jobTimer=null, modelDownloadTimer=null, demoWaiting=false, activeRendering=false;
 let busy=false;
+let renderBusyServer=false, generationLaunching=false;
+function setRenderControlsBusy(serverBusy){
+ renderBusyServer=Boolean(serverBusy);
+ const locked=renderBusyServer||generationLaunching;
+ $('generate').disabled=locked;
+ $('generate').title=locked?'GPU занят: генерация только по одной, без очереди':'Запустить одно задание';
+ $('quickDraftAI').disabled=locked;
+}
+document.addEventListener('draftsman:gpu-state',event=>
+ setRenderControlsBusy(event.detail?.busy));
 function say(s){$('message').textContent=String(s)}
 async function api(url,method='GET',data){
  const options={method};
@@ -728,6 +750,7 @@ async function status(){
  const g=s.gpu?.devices?.[0];
  $('gpu').textContent=g?(g.name+' · '+(g.temperature_c??'—')+'°C'):'GPU недоступен';
  const busy=Boolean(s.engine_busy),ready=Boolean(s.engine_ready);
+ setRenderControlsBusy(busy);
  $('workerIndicator').classList.toggle('on',busy||ready);
  $('workerIndicator').textContent='● GPU worker · '+(busy?'генерация':ready?'готов':'не готов');
  $('workerIndicator').title=busy?'Сейчас выполняется генерация':ready?'Движок установлен и готов к запуску':'Движок или checkpoint недоступен';
@@ -1211,6 +1234,7 @@ async function updateJob(){
  $('jobInfo').textContent='Задание '+currentJob+' · '+job.status+' · '+(job.completed||0)+'/'+(job.total||0)+(job.error?'\n'+job.error:'');
  const busy=['running','queued'].includes(job.status);
  activeRendering=busy;
+ setRenderControlsBusy(renderBusyServer||busy);
  demoWaiting=false;
  $('demoWait').textContent='🌊 Демо ожидания';
  $('jobProgress').classList.toggle('collapsed',!busy);
@@ -1256,7 +1280,11 @@ function conflictingPromptRules(positive,negative){
  return rules.filter(([a,b])=>a.test(p)&&b.test(n)).map(x=>x[2]);
 }
 $('generate').onclick=()=>task(async()=>{
- $('generate').disabled=true;
+ if(renderBusyServer||generationLaunching||activeRendering){
+  throw Error('GPU занят. Дождись окончания текущей генерации; очередь отключена.');
+ }
+ generationLaunching=true;
+ setRenderControlsBusy(true);
  try{
   if($('referenceFile').files.length)
    throw Error('Выбранный файл ещё НЕ добавлен. Нажми «Добавить образец».');
@@ -1290,6 +1318,8 @@ $('generate').onclick=()=>task(async()=>{
     response=await api('/api/studio/projects/'+project.id+'/nodes/'+chosen+'/generate','POST',settings);
   }
   currentJob=response.job_id;demoWaiting=false;activeRendering=true;
+  setRenderControlsBusy(true);
+  document.dispatchEvent(new CustomEvent('draftsman:gpu-state',{detail:{busy:true,job_id:currentJob}}));
   $('demoWait').textContent='🌊 Демо ожидания';
   $('jobInfo').classList.remove('collapsed');
   $('jobInfo').textContent='Задание '+currentJob+' принято';
@@ -1300,7 +1330,10 @@ $('generate').onclick=()=>task(async()=>{
   await refreshJobHistory(false);
   await updateJob();
   say('Генерация запущена на RTX 3060 · ожидание показано в карточках');
- }finally{$('generate').disabled=false}
+ }finally{
+  generationLaunching=false;
+  setRenderControlsBusy(renderBusyServer||activeRendering);
+ }
 });
 document.addEventListener('draftsman:open-result',event=>{
  const id=event.detail?.job_id;
@@ -1319,7 +1352,8 @@ document.addEventListener('draftsman:job-started',event=>{
  const id=event.detail?.job_id;
  if(!/^[0-9a-f]{32}$/.test(id||''))return;
  currentJob=id;demoWaiting=false;activeRendering=true;
- switchMode('quick');
+ if(!event.detail?.stayOnResults)switchMode('quick');
+ setRenderControlsBusy(true);
  $('jobInfo').classList.remove('collapsed');
  $('jobInfo').textContent='Новое задание '+id+' запущено';
  $('jobProgress').classList.remove('collapsed');

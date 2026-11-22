@@ -270,9 +270,9 @@ pre{background:#0c1728;padding:9px;border-radius:7px;white-space:pre-wrap;overfl
   <div id="quickSection" class="panel collapsed">
    <div class="toolbar quick-project-start">
     <h2>Быстрая генерация без проекта</h2>
-    <button id="quickCreateBlankProject" type="button" class="primary" title="Создать отдельный пустой проект. Текущий промпт и результаты не копируются.">+ Новый проект с нуля</button>
+    <button id="newQuickDrawing" type="button" class="primary" title="Начать новый быстрый рисунок без графа: очистить поля и образец, не удаляя черновики или результаты.">+ Новый рисунок</button>
    </div>
-   <p class="muted">Описывай любую картинку. Граф, узлы и утверждение не нужны. По образцу — выбери img2img справа. Кнопка «Новый проект с нуля» создаёт чистый отдельный проект.</p>
+   <p class="muted">Описывай любую картинку. Граф, узлы и утверждение не нужны. По образцу — выбери img2img справа. «Новый рисунок» очищает текущий быстрый ввод; проекты создаются отдельно во вкладке «Проекты и граф».</p>
    <div class="quick-shelf">
     <div class="quick-shelf-header">
      <div class="quick-shelf-heading"><strong>Последние эскизы</strong><span class="muted">8 на странице · оригинальные PNG</span></div>
@@ -866,7 +866,42 @@ async function createBlankProject(){
   '. Исходные промпты и результаты быстрого режима не изменены.');
 }
 $('addProject').onclick=()=>task(createBlankProject);
-$('quickCreateBlankProject').onclick=()=>task(createBlankProject);
+// Fast drawings are deliberately NOT projects. Never call /api/studio/projects
+// from this button: clear only the unsaved quick-edit form and its active
+// reference; keep project graph, saved drafts, PNGs and active GPU job intact.
+function beginNewQuickDrawing(){
+ if(activeRendering||generationLaunching||renderBusyServer){
+  say('Пока GPU рисует, дождись завершения задания: новый рисунок не прервёт рендер.');
+  return;
+ }
+ for(const id of ['quickPrompt','quickNegative']){
+  $(id).value='';
+  rememberSetting(id); // Persist an intentional blank over the old saved draft at F5.
+  $(id).dispatchEvent(new Event('input',{bubbles:true})); // Clear stale RU translations.
+ }
+ $('reference').value='';
+ $('referenceFile').value='';
+ $('lora').value='';
+ $('renderMode').value='txt2img';
+ $('seed').value='0';
+ $('variants').value='1';
+ for(const id of ['reference','lora','renderMode','seed','variants'])rememberSetting(id);
+ updateReferencePreview();
+ $('referenceHint').textContent='Новый рисунок: без референса и LoRA. Ранее загруженные образцы сохранены.';
+ // Remove the completed result from the active workspace, NOT from disk,
+ // history, or SQLite. It remains available in the Results tab.
+ currentJob='';
+ demoWaiting=false;
+ $('demoWait').textContent='🌊 Демо ожидания';
+ $('jobProgress').classList.add('collapsed');
+ $('jobInfo').classList.add('collapsed');
+ $('jobInfo').textContent='';
+ $('previews').replaceChildren();
+ document.dispatchEvent(new CustomEvent('draftsman:new-quick-drawing'));
+ $('quickPrompt').focus();
+ say('Новый быстрый рисунок: поля чистые, история эскизов и проектов сохранена.');
+}
+$('newQuickDrawing').onclick=beginNewQuickDrawing;
 $('karateTemplate').onclick=()=>task(async()=>{
  if(!confirm('Импортировать Karate Linux как отдельный проект? Старые слайды в базе сохранятся.'))return;
  const r=await api('/api/studio/projects','POST',{name:'Karate Linux',template:'karate'});

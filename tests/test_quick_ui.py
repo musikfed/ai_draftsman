@@ -39,14 +39,41 @@ class QuickStudioLayoutTests(unittest.TestCase):
         self.assertIn("quickTranslationStatus",self.translation)
         self.assertIn('result["draft_id"]=',self.app)
 
-    def test_blank_project_button_visible_and_uses_existing_project_api(self):
-        self.assertIn('id="quickCreateBlankProject"',self.html)
+    def test_new_quick_drawing_is_not_a_graph_project(self):
+        # The Quick action must never call the project creation API.
+        self.assertIn('id="newQuickDrawing"',self.html)
+        self.assertIn("function beginNewQuickDrawing()",self.html)
+        self.assertIn("$('newQuickDrawing').onclick=beginNewQuickDrawing",self.html)
+        self.assertNotIn('id="quickCreateBlankProject"',self.html)
+        self.assertIn("Граф, узлы и утверждение не нужны",self.html)
+        quick=self.html.split("function beginNewQuickDrawing(){",1)[1].split(
+            "$('newQuickDrawing').onclick",1)[0]
+        self.assertNotIn("createBlankProject(",quick)
+        self.assertNotIn("api(",quick)
+        self.assertNotIn("loadProjects(",quick)
+        self.assertNotIn("switchMode('graph')",quick)
+        # The two textareas share one loop; other controls are explicit.
+        for element in ("quickPrompt","quickNegative"):
+            self.assertIn("'"+element+"'",quick)
+        self.assertIn("$(id).value=''",quick)
+        for element in ("reference","referenceFile","lora"):
+            self.assertIn("$('"+element+"')",quick)
+        self.assertIn("rememberSetting(id)",quick)
+        self.assertIn("new Event('input'",quick)
+        self.assertIn("currentJob=''",quick)
+        self.assertIn("$('previews').replaceChildren()",quick)
+        self.assertIn("draftsman:new-quick-drawing",self.html)
+        self.assertIn("draftsman:new-quick-drawing",self.results)
+        self.assertIn("state.shelfSelectedKey=''",self.results)
+        self.assertIn("draftsman_selected_sketch",self.results)
+
+    def test_graph_keeps_its_own_new_project_button(self):
+        self.assertIn('id="addProject"',self.html)
         self.assertIn('id="projectSettingsPanel"',self.html)
         self.assertIn('async function createBlankProject()',self.html)
         self.assertIn("template:'blank'",self.html)
         self.assertIn("switchMode('graph')",self.html)
         self.assertIn("$('projectSettingsPanel').open=true",self.html)
-        self.assertIn("$('quickCreateBlankProject').onclick=()=>task(createBlankProject)",self.html)
         self.assertIn("$('addProject').onclick=()=>task(createBlankProject)",self.html)
         self.assertIn('id="quickTranslationStatus"',self.html)
         self.assertIn('translation_status:d.translation_status',self.html)

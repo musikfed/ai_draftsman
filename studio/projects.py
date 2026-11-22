@@ -466,6 +466,10 @@ def register(app, db_path: Path, data_dir: Path, ollama_url: str, default_model:
 
     @app.post("/api/studio/projects/<int:project_id>/nodes/<int:node_id>/generate")
     def studio_generate(project_id,node_id):
+        active=current_job()
+        if active is not None:
+            return jsonify(error="GPU занят. Вторую генерацию в очередь не ставим.",
+                           active_job_id=active.get("job_id")),409
         data = request.get_json(silent=True) or {}
         with db() as c:
             result = assemble(c,project_id,node_id)
@@ -518,6 +522,10 @@ def register(app, db_path: Path, data_dir: Path, ollama_url: str, default_model:
                 "reference":reference,"lora":lora,"lora_scale":0.7
             })
         except (OSError, FileNotFoundError, RuntimeError) as exc:
+            active=current_job()
+            if active is not None:
+                return jsonify(error="GPU занят. Новое задание не поставлено в очередь.",
+                               active_job_id=active.get("job_id")),409
             return jsonify(error=str(exc)),422
         with db() as c:
             c.execute(

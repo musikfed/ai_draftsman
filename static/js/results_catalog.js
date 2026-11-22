@@ -375,7 +375,7 @@ document.addEventListener('visibilitychange',()=>{
   if(!E('resultsSection').classList.contains('collapsed'))loadResults(false)}
 });
 // Only lightweight HTTP reads while the user keeps a visible studio tab open.
-// No background system service and no requests to CUDA/Ollama.
+// No background service and no requests to model runtimes.
 setInterval(()=>{
  if(document.hidden)return;
  if(!E('resultsSection').classList.contains('collapsed'))loadResults(false);

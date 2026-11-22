@@ -888,6 +888,15 @@ function beginNewQuickDrawing(){
  for(const id of ['reference','lora','renderMode','seed','variants'])rememberSetting(id);
  updateReferencePreview();
  $('referenceHint').textContent='Новый рисунок: без референса и LoRA. Ранее загруженные образцы сохранены.';
+ // Remove the completed result from the active workspace, NOT from disk,
+ // history, or SQLite. It remains available in the Results tab.
+ currentJob='';
+ demoWaiting=false;
+ $('demoWait').textContent='🌊 Демо ожидания';
+ $('jobProgress').classList.add('collapsed');
+ $('jobInfo').classList.add('collapsed');
+ $('jobInfo').textContent='';
+ $('previews').replaceChildren();
  document.dispatchEvent(new CustomEvent('draftsman:new-quick-drawing'));
  $('quickPrompt').focus();
  say('Новый быстрый рисунок: поля чистые, история эскизов и проектов сохранена.');

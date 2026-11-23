@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "id": "ai_draftsman",
+  "title": "ai_draftsman",
+  "version": "0.1.0",
+  "description": "Локальная лёгкая студия для серийных учебных комиксов Karate Linux. Начальный MVP: сценарий из 24 уроков × 5 свайпов, редактор, граф эпизодов, SQLite FTS5 RAG, Ollama, ручное освобождение VRAM и терминальный запуск графического ComfyUI и экспорт PNG-8. UI доступен на 11 языках: ru, en, zh, de, hi, fr, fi, ko, ja, it, be.",
+  "subtitle": null,
+  "tags": [
+    "HTML"
+  ],
+  "visibility": "public",
+  "publication": "publish_on_merge",
+  "public_private_approved": false,
+  "display_mode": "diagram",
+  "status": "Черновик — ожидает проверки",
+  "repo_url": "https://github.com/musikfed/ai_draftsman",
+  "screenshots": [],
+  "cover": "vitrine/generated/cover.svg",
+  "cover_type": "schematic-not-screenshot",
+  "screenshot_source": "not-available"
+}
